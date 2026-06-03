@@ -38,13 +38,19 @@ Agent **默认将完整文档写入上述目录**，聊天中仅返回路径与�
 
 ## 目录结构
 
+详见 [docs/README.md](../docs/README.md)。摘要：
+
 ```
 docs/
-├── research/          # 产品调研报告
-│   └── README.md      # 索引（生成后自动追加行）
-└── requirements/      # 需求规格说明（SRS/PRD）
-    └── README.md
+├── README.md              总索引
+├── PROJECT_CHARTER.md     宪章
+├── templates/word/        Word .doc 模板
+├── research/              产品调研 → README.md 索引
+├── requirements/          实现 SRS + modules/ + diagrams/
+└── pm/                    立项/计划/需求分析（评审版）
 ```
+
+生成文档后请更新对应子目录的 `README.md`。
 
 ## Skill 路径
 

@@ -1,0 +1,122 @@
+@startuml GPT-SoVITS_Functional_Structure
+' ============================================================
+' GPT-SoVITS 语音克隆网络平台 · 系统功能结构图
+' 基于：MVP-0 模块 A–G + REQ-001~023
+' ============================================================
+
+top to bottom direction
+skinparam shadowing false
+skinparam packageStyle rectangle
+skinparam defaultFontSize 12
+
+title GPT-SoVITS 语音克隆及合成系统\n系统功能结构图（MVP-0）
+
+rectangle "GPT-SoVITS 语音克隆及合成网络平台" as SYS #F8FAFC {
+
+  package "1 账号与平台服务\n(模块 A)" as M1 #EEF2FF {
+    [注册与登录\nREQ-001] as F001
+    [用量配额管理\nREQ-023] as F023
+  }
+
+  package "2 合规与安全\n(模块 B / G)" as M2 #F0FDF4 {
+    [声纹授权上传与审核\nREQ-003] as F003
+    [合成页 AI 生成告知\nREQ-021] as F021
+    [合成前敏感词拦截\nREQ-009] as F009
+  }
+
+  package "3 音色生命周期\n(模块 C / D)" as M3 #ECFDF5 {
+    [训练素材上传与质检\nREQ-004] as F004
+    [GPT-SoVITS 音色训练\nREQ-005] as F005
+    [音色版本管理\nVoiceVersion] as F005a
+  }
+
+  package "4 短剧配音生产\n(模块 E / F)" as M4 #FFF7ED {
+    [配音项目管理\nREQ-012] as F012
+    [角色与音色绑定\nREQ-013] as F013
+    [台词表 CSV 导入\nREQ-014] as F014
+    [单条文本转语音\nREQ-007] as F007
+    [台词表批量合成\nREQ-011] as F011
+    [合规显式标识导出\nREQ-010] as F010
+  }
+
+  package "5 平台支撑\n(REQ-022)" as M5 #F1F5F9 {
+    [GPU 任务队列与状态\n训练 / 合成 / 批量] as F022
+  }
+
+  package "6 运营替代能力\n(MVP-0 人工)" as M6 #FFFBEB {
+    [授权书人工审核\n飞书/邮件] as OP1
+    [跨用户音色授权\nVoiceGrant] as OP2
+  }
+}
+
+' ---------- 主工作流依赖（虚线=门禁/调用） ----------
+F001 --> F003 : 登录后
+F003 --> F004 : 授权通过
+F004 --> F005 : 质检锁定
+F005 --> F005a
+F005a --> F007 : 可合成
+F001 --> F012 : 统筹工作流
+F012 --> F013
+F013 --> F014
+F014 --> F011
+F007 --> F011 : 批量含单条
+F011 --> F010 : 对外导出
+F009 ..> F007 : <<include>>
+F009 ..> F011 : <<include>>
+F021 ..> F007 : <<include>>
+F023 ..> F005 : 训练次数
+F023 ..> F007 : 字符配额
+F022 ..> F005 : 调度
+F022 ..> F007 : 调度
+F022 ..> F011 : 调度
+OP1 ..> F003 : 审核
+OP2 ..> F013 : 共享音色
+
+note bottom of SYS
+  **MVP-0 主路径**：
+  登录 → 授权 → 素材 → 训练 → 项目/CSV → 批量合成 → 合规导出
+  **MVP+1 延后**：音色市场、KYC、隐式水印、Open API
+end note
+
+@enduml
+
+@startuml GPT-SoVITS_Functional_Structure_Tree
+' ============================================================
+' 功能结构树形图（适合 Word 竖版插入）
+' ============================================================
+
+skinparam shadowing false
+skinparam rectangle {
+  BackgroundColor #FFFFFF
+  BorderColor #64748B
+}
+
+title 系统功能结构（树形）
+
+rectangle "GPT-SoVITS 语音克隆及合成系统" as root {
+  rectangle "账号与平台" as L1a {
+    rectangle "注册登录" as L2a1
+    rectangle "用量配额" as L2a2
+  }
+  rectangle "合规与安全" as L1b {
+    rectangle "声纹授权" as L2b1
+    rectangle "AI告知" as L2b2
+    rectangle "敏感词" as L2b3
+  }
+  rectangle "音色管理" as L1c {
+    rectangle "素材质检" as L2c1
+    rectangle "音色训练" as L2c2
+  }
+  rectangle "短剧生产" as L1d {
+    rectangle "项目管理" as L2d1
+    rectangle "角色绑定" as L2d2
+    rectangle "CSV导入" as L2d3
+    rectangle "TTS合成" as L2d4
+    rectangle "批量导出" as L2d5
+  }
+  rectangle "平台支撑" as L1e {
+    rectangle "GPU队列" as L2e1
+  }
+}
+
+@enduml

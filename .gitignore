@@ -21,7 +21,10 @@ build/
 ~$*.xls*
 ~$*.ppt*
 
-# Cursor local runtime artifacts (do not commit)
+# Local PM exports (docx/pdf)
+docs/pm/exports/*
+!docs/pm/exports/README.md
+
 .cursor/agent-tools/
 .cursor/agent-transcripts/
 .cursor/plans/

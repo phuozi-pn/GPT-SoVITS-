@@ -1,0 +1,224 @@
+@startuml GPT-SoVITS_MVP_Voice_Platform_UseCases
+' ============================================================
+' GPT-SoVITS 语音克隆网络平台 · 系统用例图
+' 基于：docs/requirements/2026-06-01-mvp-voice-platform-需求规格说明.md v1.2
+' 渲染：PlantUML / VS Code PlantUML 插件 / https://www.plantuml.com/plantuml
+' ============================================================
+
+top to bottom direction
+skinparam shadowing false
+skinparam packageStyle rectangle
+skinparam usecase {
+  BackgroundColor #F8FAFC
+  BorderColor #64748B
+  FontSize 12
+}
+skinparam actor {
+  BorderColor #334155
+}
+skinparam note {
+  BackgroundColor #FFFBEB
+  BorderColor #F59E0B
+}
+
+title GPT-SoVITS 语音克隆网络平台\n系统用例图（MVP-0 主路径 + MVP+1 扩展）
+
+' ---------- 参与者 ----------
+actor "创作者\n(配音师/独立创作者)" as Creator
+actor "短剧统筹" as Director
+actor "运营人员" as Operator
+actor "买家" as Buyer <<MVP+1>>
+actor "配音师\n(卖家)" as Seller <<MVP+1>>
+actor "GPU Worker\n(GPT-SoVITS)" as Worker <<system>>
+
+' ---------- 系统边界 ----------
+rectangle "GPT-SoVITS 语音克隆及合成网络平台" as System {
+
+  package "域 A · 账号与权限" as PKG_A #EEF2FF {
+    usecase "注册与登录\n(REQ-001)" as UC001
+    usecase "实名认证\n(REQ-002)" as UC002 <<MVP+1>>
+  }
+
+  package "域 B · 音色生命周期" as PKG_B #ECFDF5 {
+    usecase "上传声纹授权书\n(REQ-003)" as UC003
+    usecase "上传训练素材与质检\n(REQ-004)" as UC004
+    usecase "提交音色训练任务\n(REQ-005)" as UC005
+    usecase "试听训练结果" as UC005a
+    usecase "相似度测评与AB试听\n(REQ-006)" as UC006 <<MVP+1>>
+  }
+
+  package "域 C · 合成与编辑" as PKG_C #FFF7ED {
+    usecase "单条文本转语音\n(REQ-007)" as UC007
+    usecase "台词表批量合成\n(REQ-011)" as UC011
+    usecase "手动情感标签\n(REQ-008)" as UC008 <<MVP+1>>
+    usecase "韵律参数调节\n(REQ-026)" as UC026 <<MVP+1>>
+  }
+
+  package "域 D · 作品与协作" as PKG_D #F5F3FF {
+    usecase "创建与管理配音项目\n(REQ-012)" as UC012
+    usecase "角色与音色绑定\n(REQ-013)" as UC013
+    usecase "导入台词表CSV\n(REQ-014)" as UC014
+  }
+
+  package "域 E · 音色市场\n(MVP+1)" as PKG_E #FEF2F2 {
+    usecase "邀请制音色上架\n(REQ-015)" as UC015 <<MVP+1>>
+    usecase "配置授权与定价\n(REQ-016)" as UC016 <<MVP+1>>
+    usecase "购买音色授权\n(REQ-017)" as UC017 <<MVP+1>>
+    usecase "导出授权凭证\n(REQ-018)" as UC018 <<MVP+1>>
+  }
+
+  package "域 F · 安全与合规" as PKG_F #F0FDF4 {
+    usecase "合成前敏感词拦截\n(REQ-009)" as UC009
+    usecase "合规显式标识导出\n(REQ-010)" as UC010
+    usecase "合成页AI生成告知\n(REQ-021)" as UC021
+    usecase "导出音频数字水印\n(REQ-019)" as UC019 <<MVP+1>>
+    usecase "侵权投诉与下架\n(REQ-020)" as UC020 <<MVP+1>>
+  }
+
+  package "域 G · 平台能力" as PKG_G #F1F5F9 {
+    usecase "查看GPU任务队列状态\n(REQ-022)" as UC022
+    usecase "用量配额校验\n(REQ-023)" as UC023
+    usecase "管理后台审核风控\n(REQ-024)" as UC024 <<MVP+1>>
+    usecase "录入跨用户音色授权\n(VoiceGrant)" as UC024a
+    usecase "对外Open API\n(REQ-030)" as UC030 <<MVP+1>>
+  }
+}
+
+' ---------- 参与者关联（MVP-0 主路径） ----------
+Creator --> UC001
+Creator --> UC003
+Creator --> UC004
+Creator --> UC005
+Creator --> UC005a
+Creator --> UC007
+Creator --> UC021
+Creator --> UC022
+
+Director --> UC001
+Director --> UC012
+Director --> UC013
+Director --> UC014
+Director --> UC007
+Director --> UC011
+Director --> UC010
+Director --> UC021
+Director --> UC022
+
+Operator --> UC024a
+Operator ..> UC003 : <<审核>>\n飞书/邮件
+
+Worker <-- UC005 : 训练 Job
+Worker <-- UC007 : 推理 Job
+Worker <-- UC011 : 批量推理
+
+' ---------- MVP+1 参与者关联 ----------
+Seller --> UC015
+Seller --> UC016
+Buyer --> UC017
+Buyer --> UC018
+Buyer --> UC012
+Buyer --> UC013
+Buyer --> UC014
+Buyer --> UC011
+Buyer --> UC010
+Creator --> UC002
+Creator --> UC006
+Director --> UC008
+Director --> UC026
+Operator --> UC024
+Operator --> UC020
+
+' ---------- include / extend ----------
+UC005 ..> UC003 : <<include>>
+UC005 ..> UC004 : <<include>>
+UC005 ..> UC023 : <<include>>
+UC007 ..> UC009 : <<include>>
+UC007 ..> UC021 : <<include>>
+UC007 ..> UC023 : <<include>>
+UC011 ..> UC014 : <<include>>
+UC011 ..> UC013 : <<include>>
+UC011 ..> UC007 : <<include>>
+UC010 ..> UC007 : <<extend>>
+UC011 ..> UC010 : <<extend>>
+UC015 ..> UC006 : <<include>>
+UC017 ..> UC016 : <<include>>
+
+note right of UC024a
+  **4 周 MVP-0 替代方案**
+  跨用户共享音色由运营
+  手工录入 VoiceGrant，
+  不开发市场 UI
+end note
+
+note bottom of System
+  **MVP-0 交付（14 条 P0）**：001, 003–005, 007, 009–014, 021–023
+  **关键路径**：登录 → 授权 → 训练 → 单条合成 → 项目/CSV 批量 → 合规导出
+end note
+
+@enduml
+
+@startuml GPT-SoVITS_MVP0_UseCases_Only
+' ============================================================
+' 仅 MVP-0（4 周）用例图 — 精简版，适合立项/评审
+' ============================================================
+
+left to right direction
+skinparam shadowing false
+skinparam packageStyle rectangle
+
+title GPT-SoVITS 语音克隆网络平台 · MVP-0 用例图（4 周）
+
+actor "创作者" as Creator
+actor "短剧统筹" as Director
+actor "运营人员" as Operator
+
+rectangle "MVP-0 系统边界" {
+
+  usecase "UC-01\n注册与登录" as UC001
+  usecase "UC-02\n上传声纹授权书" as UC003
+  usecase "UC-03\n上传素材与质检" as UC004
+  usecase "UC-04\n音色训练" as UC005
+  usecase "UC-05\n单条TTS合成" as UC007
+  usecase "UC-06\n敏感词拦截" as UC009
+  usecase "UC-07\nAI生成告知" as UC021
+  usecase "UC-08\n创建配音项目" as UC012
+  usecase "UC-09\n角色音色绑定" as UC013
+  usecase "UC-10\nCSV台词导入" as UC014
+  usecase "UC-11\n批量合成" as UC011
+  usecase "UC-12\n合规标识导出" as UC010
+  usecase "UC-13\n任务队列状态" as UC022
+  usecase "UC-14\n用量配额" as UC023
+  usecase "UC-15\n运营录入VoiceGrant" as UC024a
+}
+
+Creator --> UC001
+Creator --> UC003
+Creator --> UC004
+Creator --> UC005
+Creator --> UC007
+Creator --> UC021
+Creator --> UC022
+
+Director --> UC001
+Director --> UC012
+Director --> UC013
+Director --> UC014
+Director --> UC011
+Director --> UC010
+Director --> UC022
+
+Operator --> UC024a
+Operator ..> UC003 : 人工审核
+
+UC005 ..> UC003 : <<include>>
+UC005 ..> UC004 : <<include>>
+UC005 ..> UC023 : <<include>>
+UC007 ..> UC009 : <<include>>
+UC007 ..> UC021 : <<include>>
+UC007 ..> UC023 : <<include>>
+UC011 ..> UC014 : <<include>>
+UC011 ..> UC013 : <<include>>
+UC011 ..> UC007 : <<include>>
+UC011 ..> UC010 : <<extend>>
+
+@enduml

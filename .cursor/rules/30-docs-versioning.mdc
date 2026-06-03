@@ -6,17 +6,40 @@ description: 文档落盘与命名规范；调研与需求必须写入 docs/ 目
 
 除非用户明确要求“只在对话预览，不写文件”，否则所有调研与需求产出都必须写入仓库内 Markdown 文件。
 
+## 目录结构（`docs/`）
+
+```
+docs/
+├── README.md              总索引（新增文档时先更新）
+├── PROJECT_CHARTER.md     项目宪章
+├── templates/
+│   ├── word/              公司 Word .doc 模板
+│   └── reference/         模板章节 Markdown 参考（非正式正文）
+├── research/              产品调研
+├── requirements/          实现 SRS + modules/ + diagrams/
+└── pm/                    立项/计划/需求分析 + exports/（本地导出，不提交）
+```
+
 ## 调研报告
 
 - 目录：`docs/research/`
 - 文件名：`YYYY-MM-DD-{slug}-产品调研报告.md`
-- 索引：更新 `docs/research/README.md`（追加一行：日期、文件名、范围摘要/版本）
+- 索引：更新 `docs/research/README.md`
 
-## 需求规格
+## 需求规格（实现向）
 
-- 目录：`docs/requirements/`
-- 文件名：`YYYY-MM-DD-{slug}-需求规格说明.md`
-- 索引：更新 `docs/requirements/README.md`（追加一行：版本、文件名、阶段、基于调研）
+- 主 SRS：`docs/requirements/YYYY-MM-DD-{slug}-需求规格说明.md`
+- 子模块：`docs/requirements/modules/`
+- UML：`docs/requirements/diagrams/`
+- 索引：更新 `docs/requirements/README.md`
+
+## PM 文档（评审 / 出版）
+
+- 目录：`docs/pm/`
+- 文件名：`YYYY-MM-DD-{立项|项目计划|需求分析}文档.md`
+- Word 模板：`docs/templates/word/`（与 PM md 对应）
+- 本地导出：`docs/pm/exports/`（gitignore，不提交 docx）
+- 索引：更新 `docs/pm/README.md`
 
 ## 宪章
 
@@ -26,5 +49,4 @@ description: 文档落盘与命名规范；调研与需求必须写入 docs/ 目
 ## 版本策略
 
 - 小改：文内版本号递增（v1.0 → v1.1）
-- 重大改：可新增 `-v2` 文件名或在文内记录变更原因（以团队习惯为准）
-
+- 重大改：可新增 `-v2` 文件名或在文内记录变更原因

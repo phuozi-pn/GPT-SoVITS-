@@ -24,6 +24,8 @@ build/
 # Local PM exports (docx/pdf)
 docs/pm/exports/*
 !docs/pm/exports/README.md
+!docs/pm/exports/*.docx
+
 
 .cursor/agent-tools/
 .cursor/agent-transcripts/

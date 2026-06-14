@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
-import { ApiError, pollJob } from "@/api/client";
+import { ApiError, pollJob, exportDownloadUrl } from "@/api/client";
 import {
   bindProjectRole,
   createProject,
@@ -18,7 +18,7 @@ const selectedProjectId = ref("");
 const roleName = ref("龙宫");
 const roleVoiceId = ref("");
 const batchLog = ref("");
-const zipUrl = ref("");
+const batchJobId = ref("");
 const error = ref("");
 const busy = ref(false);
 
@@ -74,7 +74,7 @@ async function onCsvChange(e: Event) {
   const file = input.files?.[0];
   if (!file || !selectedProjectId.value) return;
   error.value = "";
-  zipUrl.value = "";
+  batchJobId.value = "";
   batchLog.value = "上传 CSV…";
   busy.value = true;
   try {
@@ -90,7 +90,7 @@ async function onCsvChange(e: Event) {
     if (job.status !== "succeeded") {
       throw new Error(job.error_message ?? "批量失败");
     }
-    zipUrl.value = (job as { zip_url?: string }).zip_url ?? "";
+    batchJobId.value = res.job_id;
     batchLog.value = `完成：成功 ${(job as { succeeded_count?: number }).succeeded_count ?? "?"} 行`;
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e);
@@ -150,10 +150,11 @@ const currentProject = () => projects.value.find((p) => p.project_id === selecte
     <section class="card">
       <h2>3. CSV 批量合成</h2>
       <p class="hint">示例：<code>role,text</code> 行：<code>龙宫,方源，你给我出来！</code></p>
+      <p class="hint">导出 ZIP 含 COMPLIANCE_README.txt、manifest.json，每条 wav 开头含 AI 节奏标识。</p>
       <input type="file" accept=".csv,text/csv" :disabled="busy" @change="onCsvChange" />
       <p v-if="batchLog" class="log">{{ batchLog }}</p>
-      <p v-if="zipUrl">
-        <a class="btn btn--primary" :href="zipUrl" download>下载 ZIP 分轨</a>
+      <p v-if="batchJobId">
+        <a class="btn btn--primary" :href="exportDownloadUrl(batchJobId)" download>合规 ZIP 下载</a>
       </p>
     </section>
   </div>

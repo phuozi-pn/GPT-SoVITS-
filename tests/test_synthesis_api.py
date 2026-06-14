@@ -40,5 +40,20 @@ def test_synthesis_rejects_sensitive(client):
     assert r.json()["detail"]["code"] == "SENSITIVE_WORD"
 
 
+def test_synthesis_rejects_no_ai_disclosure(client):
+    with patch("apps.api.routes.synthesis.VoiceVersionRepository") as repo_cls:
+        repo_cls.return_value.user_can_access.return_value = True
+        r = client.post(
+            "/api/v1/synthesis",
+            json={
+                "voice_version_id": VOICE,
+                "text": "你好",
+                "ai_disclosure_ack": False,
+            },
+        )
+    assert r.status_code == 403
+    assert r.json()["detail"]["code"] == "AI_DISCLOSURE_REQUIRED"
+
+
 def test_health(client):
     assert client.get("/health").json() == {"status": "ok"}

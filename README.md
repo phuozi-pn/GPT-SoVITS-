@@ -73,9 +73,12 @@ cd C:\Users\panta\Desktop\GPT   # 换成你的 clone 路径
 
 | 页面 | URL |
 |------|-----|
+| 听感 A/B 产出 | `data/tune_ab/`（运行 `scripts/tune_ab_compare.py`） |
+| 听感调参指南 | [docs/architecture/2026-06-16-004听感调参指南.md](docs/architecture/2026-06-16-004听感调参指南.md) |
 | 工作台（上传/训练） | http://127.0.0.1:5173/studio |
 | 音色库（导入权重/试听） | http://127.0.0.1:5173/library |
 | 批量配音（CSV + ZIP） | http://127.0.0.1:5173/projects |
+| 音色馆（精选/跨用户） | http://127.0.0.1:5173/catalog |
 | OpenAPI | http://127.0.0.1:8001/api/v1/docs |
 
 ### 2. 引擎合成（9880）
@@ -132,8 +135,9 @@ bash infra/engine/cloud/train.sh /root/train_10min.wav /root/train_out my-voice-
 |----|------|------|
 | W1 Core | Spike + API/Job + 合成 | ✅ |
 | W2 Workflow | 上传/QC + Web + 权重导入 + CSV 批量 | ✅ |
-| W3 | 合规导出、敏感词 | 待开始 |
-| W4 | E2E、加固 | 待开始 |
+| W3 | 合规导出、敏感词 | ✅ |
+| W4 | CI、部署文档 | ✅ |
+| MVP+1 | 音色馆 + VoiceGrant | 🚧 第一切片 |
 
 ## 仓库外路径
 

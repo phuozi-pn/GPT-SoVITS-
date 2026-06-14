@@ -155,11 +155,20 @@ export async function startTrain(voiceId: string, voiceAssetId: string) {
   });
 }
 
-export async function synthesize(voiceVersionId: string, text: string) {
+export async function synthesize(voiceVersionId: string, text: string, aiDisclosureAck = true) {
   return apiJson<{ job_id: string; status: string }>("/api/v1/synthesis", {
     method: "POST",
-    body: JSON.stringify({ voice_version_id: voiceVersionId, text, format: "wav" }),
+    body: JSON.stringify({
+      voice_version_id: voiceVersionId,
+      text,
+      format: "wav",
+      ai_disclosure_ack: aiDisclosureAck,
+    }),
   });
+}
+
+export function exportDownloadUrl(jobId: string): string {
+  return `${API_BASE}/api/v1/exports/${jobId}/download`;
 }
 
 export async function getJob(jobId: string) {

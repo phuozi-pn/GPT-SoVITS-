@@ -4,7 +4,6 @@ import csv
 import io
 from uuid import UUID
 
-from domains.compliance.gateway import ComplianceGateway, ComplianceError
 from voice_platform.job.repository import JobRepository, ProjectRepository, VoiceVersionRepository
 from voice_platform.job.schemas import (
     BatchLinePayload,
@@ -33,7 +32,6 @@ class ProjectService:
         self._versions = VoiceVersionRepository(session)
         self._jobs = JobRepository(session)
         self._quota = QuotaRepository(session)
-        self._gateway = ComplianceGateway()
 
     def create_project(self, *, owner_user_id: UUID, name: str) -> ProjectResponse:
         row = self._projects.create(owner_user_id=owner_user_id, name=name)
@@ -129,15 +127,13 @@ class ProjectService:
                     f"Role {line.role} voice not accessible",
                     403,
                 )
-            try:
-                self._gateway.validate_synthesis(
-                    user_id=owner_user_id,
-                    voice_version_id=line.voice_version_id,
-                    text=line.text,
-                    has_voice_access=True,
+            cleaned = line.text.strip()
+            if not cleaned or len(cleaned) > 5000:
+                raise ProjectServiceError(
+                    "CSV_INVALID",
+                    f"Row {line.index}: invalid text length",
+                    400,
                 )
-            except ComplianceError as exc:
-                raise ProjectServiceError(exc.code, exc.message, exc.http_status) from exc
 
         payload = BatchPayload(project_id=project_id, lines=lines)
         record = self._jobs.create_batch_job(

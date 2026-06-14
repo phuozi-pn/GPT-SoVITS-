@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 from uuid import UUID
 
+from domains.compliance.wordlist import find_sensitive_word
+from voice_platform.config import get_settings
 from voice_platform.job.schemas import InferPayload
 
 
@@ -16,11 +18,12 @@ class ComplianceError(Exception):
 
 _PUNCT_ONLY = re.compile(r"^[\s\W]+$", re.UNICODE)
 
-# W1 stub — replace with module G integration
-_DEFAULT_BLOCKLIST = {"测试敏感词"}
-
 
 class ComplianceGateway:
+    def __init__(self, *, wordlist_path: str | None = None) -> None:
+        settings = get_settings()
+        self._wordlist_path = wordlist_path or settings.compliance_wordlist_path or None
+
     def validate_synthesis(
         self,
         *,
@@ -34,15 +37,23 @@ class ComplianceGateway:
             raise ComplianceError("AI_DISCLOSURE_REQUIRED", "AI disclosure required", 403)
         if not has_voice_access:
             raise ComplianceError("VOICE_NOT_GRANTED", "Voice version not accessible", 403)
+        cleaned = self._validate_text(text)
+        return InferPayload(voice_version_id=voice_version_id, text=cleaned)
+
+    def validate_batch_line_text(self, text: str) -> str:
+        """Basic + sensitive check for a single CSV line (batch worker)."""
+        return self._validate_text(text)
+
+    def _validate_text(self, text: str) -> str:
         cleaned = text.strip()
         if not cleaned or _PUNCT_ONLY.match(cleaned):
             raise ComplianceError("INVALID_TEXT", "Text is empty or punctuation only", 400)
         if len(cleaned) > 5000:
             raise ComplianceError("TEXT_TOO_LONG", "Text exceeds 5000 characters", 400)
-        for word in _DEFAULT_BLOCKLIST:
-            if word in cleaned:
-                raise ComplianceError("SENSITIVE_WORD", f"Sensitive word blocked: {word}", 400)
-        return InferPayload(voice_version_id=voice_version_id, text=cleaned)
+        hit = find_sensitive_word(cleaned, path=self._wordlist_path)
+        if hit:
+            raise ComplianceError("SENSITIVE_WORD", f"Sensitive word blocked: {hit}", 400)
+        return cleaned
 
     def validate_train(
         self,

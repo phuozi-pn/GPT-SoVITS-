@@ -5,6 +5,13 @@ import re
 from pathlib import Path
 from uuid import UUID
 
+from domains.compliance.export import (
+    COMPLIANCE_README,
+    apply_compliance_label,
+    build_manifest,
+    manifest_json,
+)
+from domains.compliance.gateway import ComplianceError, ComplianceGateway
 from voice_platform.config import get_db_session, get_settings
 from voice_platform.job.models import VoiceVersionRow
 from voice_platform.job.queue import RedisJobQueue
@@ -17,6 +24,7 @@ from workers.infer.runner import EngineAdapter, InferContext, MockEngineAdapter
 logger = logging.getLogger(__name__)
 
 _ROLE_SAFE = re.compile(r"[^\w\u4e00-\u9fff\-]+")
+_gateway = ComplianceGateway()
 
 
 def _safe_role(name: str) -> str:
@@ -34,6 +42,7 @@ def run_once(*, use_mock: bool = False) -> bool:
     jobs = JobRepository(session)
     storage = LocalStorage()
     adapter = MockEngineAdapter() if use_mock else EngineAdapter()
+    settings = get_settings()
 
     record = jobs.get_job(job_id)
     if not record or record.status not in (JobStatus.QUEUED, JobStatus.RUNNING):
@@ -49,13 +58,15 @@ def run_once(*, use_mock: bool = False) -> bool:
 
         for line in lines:
             try:
-                audio_url, duration = _synthesize_line(
+                audio_url, duration, label_meta = _synthesize_line(
                     adapter=adapter,
                     storage=storage,
                     owner_user_id=record.owner_user_id,
                     batch_job_id=job_id,
                     line=line,
                     session=session,
+                    apply_label=settings.compliance_export_required,
+                    label_type=settings.compliance_label_type,
                 )
                 succeeded.append(
                     {
@@ -64,11 +75,30 @@ def run_once(*, use_mock: bool = False) -> bool:
                         "text": line.text,
                         "audio_url": audio_url,
                         "duration_sec": duration,
+                        "export_compliant": label_meta.get("export_compliant", False),
+                        "label_type": label_meta.get("label_type"),
+                        "labeled_at": label_meta.get("labeled_at"),
+                    }
+                )
+            except ComplianceError as exc:
+                failed.append(
+                    {
+                        "index": line.index,
+                        "role": line.role,
+                        "error_code": exc.code,
+                        "error": exc.message,
                     }
                 )
             except Exception as exc:
                 logger.exception("batch line failed job=%s idx=%s", job_id, line.index)
-                failed.append({"index": line.index, "role": line.role, "error": str(exc)})
+                failed.append(
+                    {
+                        "index": line.index,
+                        "role": line.role,
+                        "error_code": "JOB_FAILED",
+                        "error": str(exc),
+                    }
+                )
 
         zip_url = None
         if succeeded:
@@ -78,6 +108,7 @@ def run_once(*, use_mock: bool = False) -> bool:
                     user_id=record.owner_user_id,
                     job_id=job_id,
                     succeeded=succeeded,
+                    failures=failed,
                 )
             )
             char_total = sum(len(item["text"]) for item in succeeded)
@@ -94,6 +125,7 @@ def run_once(*, use_mock: bool = False) -> bool:
             "items": succeeded,
             "failures": failed,
             "zip_url": zip_url,
+            "export_compliant": bool(succeeded and settings.compliance_export_required),
         }
         if not succeeded:
             jobs.mark_failed(job_id, "All batch lines failed")
@@ -116,7 +148,10 @@ def _synthesize_line(
     batch_job_id: UUID,
     line: BatchLinePayload,
     session,
-) -> tuple[str, float]:
+    apply_label: bool,
+    label_type: str,
+) -> tuple[str, float, dict]:
+    cleaned = _gateway.validate_batch_line_text(line.text)
     voice = session.get(VoiceVersionRow, line.voice_version_id)
     if not voice:
         raise RuntimeError(f"VoiceVersion not found: {line.voice_version_id}")
@@ -124,10 +159,16 @@ def _synthesize_line(
     ctx = InferContext(
         job_id=batch_job_id,
         owner_user_id=owner_user_id,
-        payload=InferPayload(voice_version_id=line.voice_version_id, text=line.text),
+        payload=InferPayload(voice_version_id=line.voice_version_id, text=cleaned),
         voice=voice,
     )
     audio_bytes = adapter.synthesize(ctx)
+    label_meta: dict = {}
+    if apply_label:
+        audio_bytes, label_meta = apply_compliance_label(
+            audio_bytes,
+            label_type=label_type,
+        )
     role = _safe_role(line.role)
     rel = storage.save_bytes(
         user_id=owner_user_id,
@@ -137,7 +178,7 @@ def _synthesize_line(
         relative_name=f"batch/{batch_job_id}/{line.index:04d}_{role}.wav",
     )
     duration = LocalStorage.wav_duration_sec(storage.absolute_path(rel))
-    return storage.public_url(rel), round(duration, 2)
+    return storage.public_url(rel), round(duration, 2), label_meta
 
 
 def _build_zip(
@@ -146,12 +187,20 @@ def _build_zip(
     user_id: UUID,
     job_id: UUID,
     succeeded: list[dict],
+    failures: list[dict],
 ) -> str:
     import io
     import zipfile
 
+    manifest = build_manifest(
+        job_id=str(job_id),
+        items=succeeded,
+        failures=failures,
+    )
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("COMPLIANCE_README.txt", COMPLIANCE_README.encode("utf-8"))
+        zf.writestr("manifest.json", manifest_json(manifest))
         for item in succeeded:
             url = item.get("audio_url") or ""
             rel_part = url.split("/files/", 1)[-1] if "/files/" in url else ""
@@ -167,7 +216,7 @@ def _build_zip(
         job_id=job_id,
         data=buf.getvalue(),
         ext="zip",
-        relative_name=f"batch/{job_id}/export.zip",
+        relative_name=f"batch/{job_id}/export_compliant.zip",
     )
 
 

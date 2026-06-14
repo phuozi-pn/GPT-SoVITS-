@@ -84,6 +84,8 @@ class EngineWeightsImportService:
             "text_split_method": body.text_split_method,
             "temperature": body.temperature,
             "speed_factor": body.speed_factor,
+            "top_p": body.top_p,
+            "tune_preset": "cut0_t078_sp105",
         }
 
         row = self._versions.create_version(

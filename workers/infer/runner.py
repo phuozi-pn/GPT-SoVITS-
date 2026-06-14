@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from uuid import UUID
 
 import httpx
+from domains.compliance.export import apply_compliance_label
 from voice_platform.config import get_db_session, get_settings
 from voice_platform.engine.paths import host_path_to_container, weights_path_for_api
 from voice_platform.job.models import VoiceVersionRow
@@ -139,6 +140,14 @@ def run_once(*, use_mock: bool = False) -> bool:
             voice=voice,
         )
         audio_bytes = adapter.synthesize(ctx)
+        settings = get_settings()
+        label_meta: dict = {}
+        if settings.compliance_export_required:
+            audio_bytes, label_meta = apply_compliance_label(
+                audio_bytes,
+                sample_rate=payload.sample_rate,
+                label_type=settings.compliance_label_type,
+            )
         rel = storage.save_bytes(
             user_id=record.owner_user_id,
             job_id=job_id,
@@ -151,6 +160,9 @@ def run_once(*, use_mock: bool = False) -> bool:
             "audio_url": storage.public_url(rel),
             "duration_sec": round(duration, 2),
             "chars_billed": len(payload.text),
+            "export_compliant": bool(label_meta.get("export_compliant")),
+            "label_type": label_meta.get("label_type"),
+            "labeled_at": label_meta.get("labeled_at"),
         }
         jobs.mark_succeeded(job_id, result)
         QuotaRepository(session).record_chars(

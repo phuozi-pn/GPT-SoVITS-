@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from voice_platform.config import ensure_storage_root, get_settings
 
-from apps.api.routes import assets, auth, consents, jobs, projects, synthesis, usage, voices
+from apps.api.routes import assets, auth, catalog, consents, exports, jobs, projects, synthesis, usage, voices
 
 
 def _run_migrations() -> None:
@@ -56,10 +56,12 @@ def create_app() -> FastAPI:
     app.include_router(usage.router, prefix="/api/v1", tags=["usage"])
     app.include_router(synthesis.router, prefix="/api/v1", tags=["synthesis"])
     app.include_router(voices.router, prefix="/api/v1", tags=["voices"])
+    app.include_router(catalog.router, prefix="/api/v1", tags=["catalog"])
     app.include_router(projects.router, prefix="/api/v1", tags=["projects"])
     app.include_router(assets.router, prefix="/api/v1", tags=["assets"])
     app.include_router(consents.router, prefix="/api/v1", tags=["consents"])
     app.include_router(jobs.router, prefix="/api/v1", tags=["jobs"])
+    app.include_router(exports.router, prefix="/api/v1", tags=["exports"])
 
     storage_root = Path(get_settings().storage_root)
     storage_root.mkdir(parents=True, exist_ok=True)

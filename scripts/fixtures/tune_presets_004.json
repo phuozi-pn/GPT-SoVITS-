@@ -1,0 +1,50 @@
+[
+  {
+    "id": "baseline_cut0_t078",
+    "label": "基线 cut0 temp0.78",
+    "text_split_method": "cut0",
+    "temperature": 0.78,
+    "speed_factor": 1.0,
+    "top_p": 1.0
+  },
+  {
+    "id": "cut0_t068",
+    "label": "更稳 cut0 temp0.68",
+    "text_split_method": "cut0",
+    "temperature": 0.68,
+    "speed_factor": 1.0,
+    "top_p": 1.0
+  },
+  {
+    "id": "cut0_t088",
+    "label": "更活 cut0 temp0.88",
+    "text_split_method": "cut0",
+    "temperature": 0.88,
+    "speed_factor": 1.0,
+    "top_p": 1.0
+  },
+  {
+    "id": "cut5_t078",
+    "label": "对比 cut5 temp0.78",
+    "text_split_method": "cut5",
+    "temperature": 0.78,
+    "speed_factor": 1.0,
+    "top_p": 1.0
+  },
+  {
+    "id": "cut0_t078_sp105",
+    "label": "略快 cut0 temp0.78 speed1.05",
+    "text_split_method": "cut0",
+    "temperature": 0.78,
+    "speed_factor": 1.05,
+    "top_p": 1.0
+  },
+  {
+    "id": "cut0_t078_topp095",
+    "label": "收敛 cut0 temp0.78 top_p0.95",
+    "text_split_method": "cut0",
+    "temperature": 0.78,
+    "speed_factor": 1.0,
+    "top_p": 0.95
+  }
+]

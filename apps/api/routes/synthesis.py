@@ -41,6 +41,7 @@ def create_synthesis(
             voice_version_id=body.voice_version_id,
             text=body.text,
             has_voice_access=has_access,
+            ai_disclosure_ack=body.ai_disclosure_ack,
         )
     except ComplianceError as exc:
         raise HTTPException(status_code=exc.http_status, detail={"code": exc.code, "message": exc.message}) from exc

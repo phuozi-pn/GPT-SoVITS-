@@ -22,6 +22,7 @@ const devMode = computed(() => localStorage.getItem("dev_mode") === "1");
         <nav class="app-nav">
           <RouterLink to="/studio" class="app-nav__link">工作室</RouterLink>
           <RouterLink to="/library" class="app-nav__link">音色库</RouterLink>
+          <RouterLink to="/catalog" class="app-nav__link">音色馆</RouterLink>
           <RouterLink to="/projects" class="app-nav__link">批量配音</RouterLink>
           <a href="/api/v1/docs" target="_blank" rel="noreferrer" class="app-nav__link">API</a>
         </nav>

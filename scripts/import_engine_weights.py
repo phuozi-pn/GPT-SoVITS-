@@ -36,6 +36,8 @@ def main() -> int:
         "ref_text": args.ref_text,
         "text_split_method": "cut0",
         "temperature": 0.78,
+        "speed_factor": 1.05,
+        "top_p": 1.0,
     }
     if args.voice_id:
         body["voice_id"] = args.voice_id

@@ -44,6 +44,8 @@ export interface ImportWeightsBody {
   ref_text: string;
   text_split_method?: string;
   temperature?: number;
+  speed_factor?: number;
+  top_p?: number;
 }
 
 export async function importEngineWeights(body: ImportWeightsBody) {

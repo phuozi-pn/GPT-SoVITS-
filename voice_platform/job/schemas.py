@@ -58,7 +58,8 @@ class ImportEngineWeightsRequest(BaseModel):
     ref_text: str = Field(min_length=1, max_length=2000)
     text_split_method: str = Field(default="cut0", pattern="^(cut0|cut1|cut2|cut3|cut4|cut5)$")
     temperature: float = Field(default=0.78, ge=0.1, le=2.0)
-    speed_factor: float = Field(default=1.0, ge=0.5, le=2.0)
+    speed_factor: float = Field(default=1.05, ge=0.5, le=2.0)
+    top_p: float = Field(default=1.0, ge=0.1, le=1.0)
     model_tag: str = MODEL_TAG_V2PRO
 
 
@@ -103,6 +104,43 @@ class ProjectResponse(BaseModel):
     roles: list[ProjectRoleResponse] = Field(default_factory=list)
 
 
+class CatalogPublishRequest(BaseModel):
+    voice_version_id: UUID
+    title: str = Field(min_length=1, max_length=128)
+    description: str = Field(default="", max_length=2000)
+    tags: list[str] = Field(default_factory=list, max_length=10)
+    featured: bool = False
+
+
+class CatalogEntryResponse(BaseModel):
+    catalog_id: UUID
+    voice_version_id: UUID
+    voice_id: UUID
+    voice_name: str
+    title: str
+    description: str
+    tags: list[str] = Field(default_factory=list)
+    featured: bool
+    owner_user_id: UUID
+    can_use: bool = True
+
+
+class VoiceGrantCreateRequest(BaseModel):
+    grantee_user_id: UUID
+    expires_at: datetime | None = None
+
+
+class VoiceGrantResponse(BaseModel):
+    grant_id: UUID
+    voice_id: UUID
+    voice_name: str
+    granter_user_id: UUID
+    grantee_user_id: UUID
+    scope: str
+    expires_at: datetime | None = None
+    created_at: datetime | None = None
+
+
 class BatchSubmitResponse(BaseModel):
     job_id: UUID
     status: JobStatus
@@ -137,6 +175,7 @@ class SynthesisRequest(BaseModel):
     voice_version_id: UUID
     text: str = Field(min_length=1, max_length=5000)
     format: str = Field(default="wav", pattern="^(wav|mp3)$")
+    ai_disclosure_ack: bool = True
 
 
 class TrainPayload(BaseModel):

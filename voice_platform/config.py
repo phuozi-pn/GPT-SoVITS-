@@ -53,6 +53,9 @@ class Settings(BaseSettings):
     web_cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
     train_use_asr: bool = True
     train_asr_language: str = "zh"
+    compliance_wordlist_path: str = ""
+    compliance_label_type: str = "rhythm"
+    compliance_export_required: bool = True
 
 
 @lru_cache

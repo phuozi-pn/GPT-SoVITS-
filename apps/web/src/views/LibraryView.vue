@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
-import { ApiError, pollJob, synthesize } from "@/api/client";
+import { ApiError, pollJob, synthesize, exportDownloadUrl } from "@/api/client";
 import {
   fetchVoiceVersions,
   importEngineWeights,
@@ -15,7 +15,9 @@ const success = ref("");
 
 const synthVersionId = ref("");
 const synthText = ref("方源，你给我出来！");
+const aiDisclosureAck = ref(true);
 const audioUrl = ref("");
+const lastSynthJobId = ref("");
 const synthBusy = ref(false);
 
 const importForm = ref<ImportWeightsBody>({
@@ -27,6 +29,8 @@ const importForm = ref<ImportWeightsBody>({
   ref_text: "龙宫傲然一笑，宿命谷从来都不能被古仙运用。",
   text_split_method: "cut0",
   temperature: 0.78,
+  speed_factor: 1.05,
+  top_p: 1.0,
 });
 
 async function reload() {
@@ -63,18 +67,20 @@ async function onImport() {
 }
 
 async function onSynth() {
-  if (!synthVersionId.value) return;
+  if (!synthVersionId.value || !aiDisclosureAck.value) return;
   error.value = "";
   audioUrl.value = "";
+  lastSynthJobId.value = "";
   synthBusy.value = true;
   try {
-    const s = await synthesize(synthVersionId.value, synthText.value.trim());
+    const s = await synthesize(synthVersionId.value, synthText.value.trim(), aiDisclosureAck.value);
+    lastSynthJobId.value = s.job_id;
     const job = await pollJob(s.job_id, undefined, 180_000);
     if (job.status !== "succeeded" || !job.audio_url) {
       throw new Error(job.error_message ?? "合成失败");
     }
     audioUrl.value = job.audio_url;
-    success.value = "合成完成";
+    success.value = "合成完成（已含 AI 显式标识）";
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e);
   } finally {
@@ -135,11 +141,22 @@ async function onSynth() {
         台词
         <textarea v-model="synthText" rows="3" />
       </label>
-      <button class="btn btn--primary" :disabled="synthBusy || !synthVersionId" @click="onSynth">
+      <label class="compliance-row">
+        <input v-model="aiDisclosureAck" type="checkbox" />
+        我已知晓：合成内容为 AI 生成，下载文件含显式标识（不可关闭）
+      </label>
+      <button
+        class="btn btn--primary"
+        :disabled="synthBusy || !synthVersionId || !aiDisclosureAck"
+        @click="onSynth"
+      >
         {{ synthBusy ? "合成中…" : "合成试听" }}
       </button>
       <audio v-if="audioUrl" controls :src="audioUrl" class="audio-player" />
-      <p v-if="audioUrl" class="hint"><a :href="audioUrl" download>下载 wav</a></p>
+      <p v-if="lastSynthJobId" class="hint">
+        <a :href="exportDownloadUrl(lastSynthJobId)" download>合规导出下载</a>
+        （含节奏标识片头）
+      </p>
     </section>
   </div>
 </template>
@@ -206,6 +223,14 @@ textarea {
 .tag--ok {
   background: #dcfce7;
   color: #166534;
+}
+.compliance-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
 }
 .audio-player {
   display: block;

@@ -12,6 +12,8 @@ from voice_platform.job.models import (
     ProjectRoleRow,
     ProjectRow,
     VoiceAssetRow,
+    VoiceCatalogEntryRow,
+    VoiceGrantRow,
     VoiceRow,
     VoiceVersionRow,
 )
@@ -294,8 +296,9 @@ class VoiceVersionRepository:
         return self._session.get(VoiceVersionRow, voice_version_id)
 
     def user_can_access(self, voice_version_id: UUID, user_id: UUID) -> bool:
-        row = self.get(voice_version_id)
-        return row is not None and row.owner_user_id == user_id
+        from domains.voices.access import user_can_access_voice_version
+
+        return user_can_access_voice_version(self._session, voice_version_id, user_id)
 
     def next_version_number(self, voice_id: UUID) -> int:
         current = self._session.scalar(
@@ -417,3 +420,140 @@ class ProjectRepository:
                 .order_by(ProjectRoleRow.role_name.asc())
             ).all()
         )
+
+
+class VoiceCatalogRepository:
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def publish(
+        self,
+        *,
+        voice_version_id: UUID,
+        owner_user_id: UUID,
+        title: str,
+        description: str,
+        tags: list[str],
+        featured: bool,
+    ) -> VoiceCatalogEntryRow:
+        existing = self._session.scalars(
+            select(VoiceCatalogEntryRow).where(
+                VoiceCatalogEntryRow.voice_version_id == voice_version_id
+            )
+        ).first()
+        if existing:
+            existing.title = title
+            existing.description = description
+            existing.tags_json = tags
+            existing.featured = featured
+            existing.status = "published"
+            self._session.commit()
+            self._session.refresh(existing)
+            return existing
+        row = VoiceCatalogEntryRow(
+            id=uuid4(),
+            voice_version_id=voice_version_id,
+            owner_user_id=owner_user_id,
+            title=title,
+            description=description,
+            tags_json=tags,
+            featured=featured,
+            status="published",
+        )
+        self._session.add(row)
+        self._session.commit()
+        self._session.refresh(row)
+        return row
+
+    def list_published(self, *, featured_only: bool = False) -> list[VoiceCatalogEntryRow]:
+        stmt = select(VoiceCatalogEntryRow).where(VoiceCatalogEntryRow.status == "published")
+        if featured_only:
+            stmt = stmt.where(VoiceCatalogEntryRow.featured.is_(True))
+        return list(self._session.scalars(stmt.order_by(VoiceCatalogEntryRow.created_at.desc())).all())
+
+    def get_by_version(self, voice_version_id: UUID) -> VoiceCatalogEntryRow | None:
+        return self._session.scalars(
+            select(VoiceCatalogEntryRow).where(
+                VoiceCatalogEntryRow.voice_version_id == voice_version_id,
+                VoiceCatalogEntryRow.status == "published",
+            )
+        ).first()
+
+    def is_publicly_listed(self, voice_version_id: UUID) -> bool:
+        return self.get_by_version(voice_version_id) is not None
+
+
+class VoiceGrantRepository:
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def create_grant(
+        self,
+        *,
+        voice_id: UUID,
+        granter_user_id: UUID,
+        grantee_user_id: UUID,
+        expires_at: datetime | None = None,
+    ) -> VoiceGrantRow:
+        row = VoiceGrantRow(
+            id=uuid4(),
+            voice_id=voice_id,
+            granter_user_id=granter_user_id,
+            grantee_user_id=grantee_user_id,
+            scope="synthesize",
+            expires_at=expires_at,
+        )
+        self._session.add(row)
+        self._session.commit()
+        self._session.refresh(row)
+        return row
+
+    def revoke(self, grant_id: UUID, granter_user_id: UUID) -> bool:
+        row = self._session.get(VoiceGrantRow, grant_id)
+        if not row or row.granter_user_id != granter_user_id:
+            return False
+        row.revoked_at = datetime.now(timezone.utc)
+        self._session.commit()
+        return True
+
+    def list_for_granter(self, granter_user_id: UUID) -> list[VoiceGrantRow]:
+        return list(
+            self._session.scalars(
+                select(VoiceGrantRow)
+                .where(VoiceGrantRow.granter_user_id == granter_user_id)
+                .order_by(VoiceGrantRow.created_at.desc())
+            ).all()
+        )
+
+    def list_active_for_grantee(self, grantee_user_id: UUID) -> list[VoiceGrantRow]:
+        now = datetime.now(timezone.utc)
+        rows = list(
+            self._session.scalars(
+                select(VoiceGrantRow).where(
+                    VoiceGrantRow.grantee_user_id == grantee_user_id,
+                    VoiceGrantRow.revoked_at.is_(None),
+                )
+            ).all()
+        )
+        active: list[VoiceGrantRow] = []
+        for row in rows:
+            if row.expires_at and row.expires_at < now:
+                continue
+            active.append(row)
+        return active
+
+    def has_active_grant(self, *, voice_id: UUID, grantee_user_id: UUID) -> bool:
+        now = datetime.now(timezone.utc)
+        rows = list(
+            self._session.scalars(
+                select(VoiceGrantRow).where(
+                    VoiceGrantRow.voice_id == voice_id,
+                    VoiceGrantRow.grantee_user_id == grantee_user_id,
+                    VoiceGrantRow.revoked_at.is_(None),
+                )
+            ).all()
+        )
+        for row in rows:
+            if row.expires_at is None or row.expires_at >= now:
+                return True
+        return False

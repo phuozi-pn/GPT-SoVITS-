@@ -81,6 +81,33 @@ class ProjectRoleRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class VoiceCatalogEntryRow(Base):
+    __tablename__ = "voice_catalog_entries"
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    voice_version_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    owner_user_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    title: Mapped[str] = mapped_column(String(128), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    tags_json: Mapped[list[Any]] = mapped_column("tags", JSONB, default=list)
+    featured: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="published")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class VoiceGrantRow(Base):
+    __tablename__ = "voice_grants"
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    voice_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    granter_user_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    grantee_user_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    scope: Mapped[str] = mapped_column(String(32), nullable=False, default="synthesize")
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class JobRow(Base):
     __tablename__ = "jobs"
 

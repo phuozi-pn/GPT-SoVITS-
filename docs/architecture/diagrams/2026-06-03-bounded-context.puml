@@ -1,0 +1,41 @@
+@startuml Bounded_Context
+skinparam shadowing false
+
+title 有界上下文（MVP-0 / MVP+1）
+
+package "MVP-0 Core" {
+  [Identity] as id
+  [Compliance] as comp
+  [VoiceAsset] as va
+  [VoiceTrain] as vt
+  [Synthesis] as syn
+}
+
+package "MVP-0 Ext" {
+  [Production] as prod
+  [Export] as exp
+}
+
+package "Platform" {
+  [Job Platform] as job
+  [Quota] as q
+}
+
+package "MVP+1" #EEEEEE {
+  [Marketplace] as mkt
+}
+
+id --> comp : User
+comp --> va : Consent gate
+va --> vt : Asset QC
+vt --> syn : VoiceVersion
+prod --> syn : Script CSV
+syn --> exp : Audio
+syn --> job : Jobs
+vt --> job : Jobs
+q ..> syn : P1-Soft
+
+mkt ..> vt : 授权音色
+mkt ..> comp : LicensePolicy
+
+@enduml

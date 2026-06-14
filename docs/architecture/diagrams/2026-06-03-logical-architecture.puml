@@ -1,0 +1,71 @@
+@startuml Logical_Architecture_V2Pro
+skinparam shadowing false
+skinparam packageStyle rectangle
+
+title GPT-SoVITS 平台 · 逻辑架构（V2-PRO MVP-0）
+
+package "Presentation 自研" #EEF2FF {
+  [Web 工作台]
+}
+
+package "Platform 自研" #F1F5F9 {
+  [API BFF]
+  [Identity 账号]
+  [Quota 配额]
+  [Production 项目CSV]
+  [Job Orchestrator]
+}
+
+package "Compliance 自研" #F0FDF4 {
+  [Compliance Gateway]
+  [授权门禁]
+  [敏感词]
+  [AI 告知]
+}
+
+package "Engine GPT-SoVITS V2-PRO" #ECFDF5 {
+  [Preprocess Worker]
+  [Train Worker]
+  [Infer Worker]
+  note right of [Train Worker]
+    pinned: 20250606v2pro
+    model_tag: gsv-v2pro-20250606
+  end note
+}
+
+package "Post 自研" #FFF7ED {
+  [Post Worker ffmpeg]
+  [ZIP manifest]
+}
+
+cloud "Infrastructure" {
+  database "PostgreSQL" as DB
+  storage "OSS" as OSS
+  queue "Redis" as Redis
+  node "GPU" as GPU
+}
+
+[Web 工作台] --> [API BFF]
+[API BFF] --> [Identity 账号]
+[API BFF] --> [Quota 配额]
+[API BFF] --> [Production 项目CSV]
+[API BFF] --> [Compliance Gateway]
+[Compliance Gateway] --> [授权门禁]
+[Compliance Gateway] --> [敏感词]
+[Compliance Gateway] --> [AI 告知]
+[Compliance Gateway] --> [Job Orchestrator]
+[Job Orchestrator] --> Redis
+Redis --> [Preprocess Worker]
+Redis --> [Train Worker]
+Redis --> [Infer Worker]
+[Infer Worker] --> [Post Worker ffmpeg]
+[Post Worker ffmpeg] --> [ZIP manifest]
+[Preprocess Worker] --> OSS
+[Train Worker] --> OSS
+[Infer Worker] --> OSS
+[API BFF] --> DB
+[Job Orchestrator] --> DB
+[Train Worker] --> GPU
+[Infer Worker] --> GPU
+
+@enduml

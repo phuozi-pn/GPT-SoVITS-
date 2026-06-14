@@ -1,0 +1,20 @@
+# 与上游 GPT-SoVITS/docker-compose.yaml 叠加使用，挂载本产品仓库到 /workspace/GPT
+#
+# 在上游目录执行：
+#   docker compose -f docker-compose.yaml -f <path/to/this/file> run --service-ports GPT-SoVITS-CU128-Lite
+#
+# 路径通过环境变量 PLATFORM_MOUNT 指定（见 .env.platform-mount.example）
+
+services:
+  GPT-SoVITS-CU126:
+    volumes:
+      - ${PLATFORM_MOUNT}:/workspace/GPT
+  GPT-SoVITS-CU126-Lite:
+    volumes:
+      - ${PLATFORM_MOUNT}:/workspace/GPT
+  GPT-SoVITS-CU128:
+    volumes:
+      - ${PLATFORM_MOUNT}:/workspace/GPT
+  GPT-SoVITS-CU128-Lite:
+    volumes:
+      - ${PLATFORM_MOUNT}:/workspace/GPT

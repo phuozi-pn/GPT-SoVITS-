@@ -1,0 +1,52 @@
+@startuml Deployment_MVP0
+skinparam shadowing false
+
+title MVP-0 部署架构（单 GPU 最小拓扑）
+
+actor User as user
+
+rectangle "公网 HTTPS" {
+  node "网关 LB" as lb
+}
+
+rectangle "应用区" {
+  node "Web 静态" as web
+  node "API FastAPI" as api
+  database "PostgreSQL" as db
+  queue "Redis" as redis
+}
+
+rectangle "数据区" {
+  storage "OSS 对象存储" as oss
+}
+
+rectangle "GPU 区" {
+  node "Worker 容器\nGPT-SoVITS v2Pro" as worker {
+    component "Preprocess" as pre
+    component "Train" as train
+    component "Infer" as infer
+    component "Post ffmpeg" as post
+  }
+  node "GPU A10 16GB+\nTrain Infer 分时" as gpu
+}
+
+user --> lb : HTTPS
+lb --> web
+lb --> api
+api --> db
+api --> redis
+api --> oss : 签名 URL
+redis --> worker : dispatch
+worker --> oss
+pre --> gpu
+train --> gpu
+infer --> gpu
+post --> oss
+
+note bottom of worker
+  镜像 pinned: 20250606v2pro
+  MVP-0: 1 Worker 实例
+  MVP+1: Infer 水平扩展
+end note
+
+@enduml

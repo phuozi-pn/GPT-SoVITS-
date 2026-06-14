@@ -17,6 +17,8 @@ docs/
 │   └── reference/         模板章节 Markdown 参考（非正式正文）
 ├── research/              产品调研
 ├── requirements/          实现 SRS + modules/ + diagrams/
+├── architecture/          系统架构设计 + diagrams/ + Spike
+├── infra/                 见仓库根 infra/（平台 compose + 引擎 Docker Hub）
 └── pm/                    立项/计划/需求分析 + exports/（本地导出，不提交）
 ```
 
@@ -32,6 +34,15 @@ docs/
 - 子模块：`docs/requirements/modules/`
 - UML：`docs/requirements/diagrams/`
 - 索引：更新 `docs/requirements/README.md`
+
+## 架构文档
+
+- 导读：`docs/architecture/YYYY-MM-DD-system-architecture-design-系统架构设计.md`（速览 + 阅读路径）
+- 正文分章：`docs/architecture/sections/01-*.md` … `07-*.md`
+- 一页纸：`docs/architecture/YYYY-MM-DD-system-architecture-系统架构说明.md`
+- 图件：`docs/architecture/diagrams/*.puml`
+- Spike：`docs/architecture/YYYY-MM-DD-w1-spike-*.md`
+- 索引：更新 `docs/architecture/README.md`
 
 ## PM 文档（评审 / 出版）
 

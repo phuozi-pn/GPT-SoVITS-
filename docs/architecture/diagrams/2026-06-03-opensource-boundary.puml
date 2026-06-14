@@ -1,0 +1,38 @@
+@startuml OpenSource_Boundary
+skinparam shadowing false
+
+title 自研平台 vs GPT-SoVITS V2-PRO 边界
+
+rectangle "SelfBuilt 自研平台" #EEF2FF {
+  card "登录 配额" as a1
+  card "Compliance Gateway" as a2
+  card "项目 CSV 批量" as a3
+  card "Job 编排" as a4
+  card "QC 规则" as a5
+  card "ffmpeg 合规导出" as a6
+  card "生产 Web UI" as a7
+}
+
+rectangle "GPT-SoVITS V2-PRO\n20250606v2pro" #ECFDF5 {
+  card "GPT s1 训练" as b1
+  card "SoVITS s2 + SV" as b2
+  card "TTS 推理" as b3
+  card "切片 特征 SV" as b4
+  card "Gradio 仅调试" as b5
+}
+
+a4 -down-> b4 : preprocess
+a4 -down-> b1 : train
+a4 -down-> b2 : train
+a4 -down-> b3 : infer
+b3 -up-> a6 : raw wav
+
+note as N1
+  不 fork models.py
+  Worker + pinned tag
+  VoiceVersion.model_tag
+end note
+
+a5 ..> b4 : QC 通过后
+
+@enduml

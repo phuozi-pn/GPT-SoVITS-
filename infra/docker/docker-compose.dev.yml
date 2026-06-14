@@ -1,0 +1,68 @@
+# Platform local dev — PostgreSQL + Redis
+# Engine (GPU) uses upstream GPT-SoVITS docker compose — see infra/engine/README.md
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: gpt-platform-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-voice}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-voice_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-voice_platform}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-voice}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: gpt-platform-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # W1+: uncomment after `pip install -e .` at repo root
+  # api:
+  #   build:
+  #     context: ../..
+  #     dockerfile: infra/docker/Dockerfile.platform
+  #   container_name: gpt-platform-api
+  #   env_file: .env
+  #   ports:
+  #     - "8000:8000"
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+  #   command: uvicorn apps.api.main:app --host 0.0.0.0 --port 8000
+  #
+  # infer-worker:
+  #   build:
+  #     context: ../..
+  #     dockerfile: infra/docker/Dockerfile.platform
+  #   container_name: gpt-platform-infer
+  #   env_file: .env
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+  #   command: python -m workers.infer.runner
+
+volumes:
+  pgdata:
+  redisdata:

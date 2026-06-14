@@ -7,11 +7,24 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+*.egg-info/
+.pytest_cache/
+pytest_out.txt
+
+# Local train / spike artifacts (use cloud GPU + scp weights)
+finetuned_*.wav
+listen_*.wav
+spike_train_*.json
+_*_probe.html
+
+# Cloud upload packs (pretrained_models.zip ~4GB — keep local only)
+upload-packs/*.zip
 
 # Node
 node_modules/
 dist/
 build/
+*.tsbuildinfo
 
 # Logs
 *.log
@@ -21,13 +34,20 @@ build/
 ~$*.xls*
 ~$*.ppt*
 
-# Local PM exports (docx/pdf)
+# Local env & runtime
+.env
+.runtime/
+cookies.txt
+data/
+
+# Local env (infra/docker)
+infra/docker/.env
+
+# PM exports (keep README + docx templates)
 docs/pm/exports/*
 !docs/pm/exports/README.md
 !docs/pm/exports/*.docx
 
-
-.cursor/agent-tools/
 .cursor/agent-transcripts/
 .cursor/plans/
 .cursor/projects/

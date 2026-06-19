@@ -4,7 +4,7 @@ $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $PidFile = Join-Path $RepoRoot ".runtime\platform.json"
 
 if (-not (Test-Path $PidFile)) {
-    Write-Host "No .runtime\platform.json — nothing to stop."
+    Write-Host "No .runtime\platform.json - nothing to stop."
     exit 0
 }
 

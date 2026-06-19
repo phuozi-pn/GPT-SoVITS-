@@ -14,6 +14,19 @@ param(
 $ErrorActionPreference = "Stop"
 
 $RepoRoot = Split-Path $PSScriptRoot -Parent
+. (Join-Path $PSScriptRoot "engine_sync_env.ps1")
+
+function Import-DotEnv {
+    param([string]$Path)
+    Import-DotEnvFile $Path
+}
+
+Import-DotEnv (Join-Path $RepoRoot ".env")
+
+if (-not $ContainerName -and $env:ENGINE_TRAIN_DOCKER) {
+    $ContainerName = $env:ENGINE_TRAIN_DOCKER
+}
+
 if (-not $OutFile) {
     $OutFile = Join-Path $RepoRoot "finetuned_spike.wav"
 }
@@ -29,13 +42,32 @@ function Get-EngineContainer {
         [string]$Name,
         [switch]$Required
     )
-    if ($Name) { return $Name }
-    $found = docker ps --filter "publish=9874" --format "{{.Names}}" 2>$null | Select-Object -First 1
-    if ($found) {
-        return $found.ToString().Trim()
+
+    $running = Find-RunningEngineContainer -PreferredName $Name
+    if ($running) {
+        return $running
     }
+
     if ($Required) {
-        Write-Error "No engine container on port 9874. Start GPT-SoVITS Docker in upstream repo (see infra/engine/README.md §4)."
+        $hint = @"
+No running GPT-SoVITS Docker container found.
+
+1) Start engine (new terminal, keep it open):
+   cd C:\Users\panta\Desktop\GPT-SOVITS\GPT-SoVITS
+   docker compose run --service-ports --remove-orphans GPT-SoVITS-CU128-Lite
+
+2) Sync .env automatically:
+   cd C:\Users\panta\Desktop\GPT
+   .\scripts\engine_sync_env.ps1
+
+3) Start api_v2:
+   .\scripts\engine_api_v2.ps1 -Action start
+"@
+        if ($Name) {
+            Write-Error "Container '$Name' is not running (stale .env?).`n$hint"
+        } else {
+            Write-Error $hint
+        }
     }
     return $null
 }
@@ -61,8 +93,22 @@ function Test-ApiV2Up {
 
 function Get-ApiV2Process {
     $cn = Get-Cn
-    $out = docker exec $cn bash -lc "pgrep -af 'api_v2.py' 2>/dev/null || true"
-    return ($out -replace "`r", "").Trim()
+    if (-not $cn) { return "" }
+    $out = docker exec $cn bash -lc "pgrep -af 'api_v2.py' 2>/dev/null || true" 2>&1
+    $text = ConvertTo-SingleLine $out
+    if ($text -match "No such container|Error response from daemon") {
+        return ""
+    }
+    return $text
+}
+
+function Write-StaleEnvWarning {
+    if (-not $env:ENGINE_TRAIN_DOCKER) { return }
+    if (Test-ContainerRunning $env:ENGINE_TRAIN_DOCKER) { return }
+    Write-Host ""
+    Write-Host "WARN: .env ENGINE_TRAIN_DOCKER is stale:" -ForegroundColor Yellow
+    Write-Host "      $($env:ENGINE_TRAIN_DOCKER)"
+    Write-Host "      Fix: .\scripts\engine_sync_env.ps1"
 }
 
 function Read-Utf8Text {
@@ -75,15 +121,22 @@ function Read-Utf8Text {
 
 switch ($Action) {
     "status" {
+        Write-StaleEnvWarning
         $cn = Get-Cn
         if (-not $cn) {
-            Write-Host "Container: (not running — optional for synthesis)"
-            Write-Host "  Start: cd GPT-SOVITS\GPT-SoVITS && docker compose run --service-ports GPT-SoVITS-CU128-Lite"
+            Write-Host "Container: (not running)"
+            Write-Host "  1. cd C:\Users\panta\Desktop\GPT-SOVITS\GPT-SoVITS"
+            Write-Host "     docker compose run --service-ports --remove-orphans GPT-SoVITS-CU128-Lite"
+            Write-Host "  2. .\scripts\engine_sync_env.ps1"
+            Write-Host "  3. .\scripts\engine_api_v2.ps1 -Action start"
         } else {
             Write-Host "Container: $cn"
+            if ($env:ENGINE_TRAIN_DOCKER -and $env:ENGINE_TRAIN_DOCKER -ne $cn) {
+                Write-Host "  (.env stale — run .\scripts\engine_sync_env.ps1)"
+            }
             Write-Host "api_v2 process:"
             $proc = Get-ApiV2Process
-            if ($proc) { Write-Host "  $proc" } else { Write-Host "  (not running)" }
+            if ($proc -and $proc -match "api_v2\.py") { Write-Host "  $proc" } else { Write-Host "  (not running)" }
         }
         if (Test-ApiV2Up) {
             Write-Host "HTTP $base/docs -> OK"
@@ -92,10 +145,20 @@ switch ($Action) {
         }
     }
     "start" {
+        try {
+            Sync-EngineEnv -Quiet -EnvPath (Join-Path $RepoRoot ".env") | Out-Null
+        } catch {
+            Write-Error $_.Exception.Message
+        }
+        $script:EngineCn = $null
+        Import-DotEnv (Join-Path $RepoRoot ".env")
+        $ContainerName = $env:ENGINE_TRAIN_DOCKER
+
         $cn = Get-Cn -Required
         if (Test-ApiV2Up) {
             Write-Host "api_v2 already responding on $base - no second instance started."
-            Get-ApiV2Process | ForEach-Object { Write-Host "  $_" }
+            $proc = Get-ApiV2Process
+            if ($proc -match "api_v2\.py") { Write-Host "  $proc" }
             exit 0
         }
         Write-Host "Starting api_v2 in $cn (first load ~1-2 min)..."
@@ -120,9 +183,9 @@ switch ($Action) {
     "synthesize" {
         if (-not (Test-ApiV2Up)) {
             Write-Host "api_v2 not up - starting..."
-            & $PSCommandPath -Action start -ContainerName (Get-Cn)
+            & $PSCommandPath -Action start -ContainerName $ContainerName
         }
-        $cn = Get-Cn
+        $cn = Get-Cn -Required
         if ($RefHostPath) {
             if (-not (Test-Path -LiteralPath $RefHostPath)) {
                 Write-Error "RefHostPath not found: $RefHostPath"

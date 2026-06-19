@@ -1,3 +1,30 @@
+/**
+ * 统一 HTTP 客户端
+ *
+ * 职责：认证头注入、Trace-Id 管理、错误解析、通用 JSON 请求封装。
+ * 类型定义已迁移至 src/types/api.ts，此处 re-export 保持向后兼容。
+ */
+
+// ── Re-export 类型（向后兼容） ───────────────────────────
+
+export type {
+  QuotaSummary,
+  LoginResponse,
+  JobResponse,
+  SynthesisSegmentBody,
+  SynthesisBody,
+  WatermarkDetectResult,
+  EmotionAnalyzeResult,
+  EmotionBatchItem,
+  EmotionBatchResult,
+  FingerprintEnrollResponse,
+  FingerprintMatch,
+  FingerprintSearchResponse,
+  FingerprintStatusResponse,
+} from "@/types/api";
+
+// ── 错误类型 ─────────────────────────────────────────────
+
 export class ApiError extends Error {
   code: string;
   status: number;
@@ -9,25 +36,58 @@ export class ApiError extends Error {
   }
 }
 
+// ── 内部工具 ─────────────────────────────────────────────
+
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 
 function authHeaders(): HeadersInit {
   const token = localStorage.getItem("access_token");
   const headers: Record<string, string> = {};
+  let traceId = sessionStorage.getItem("trace_id");
+  if (!traceId) {
+    traceId = crypto.randomUUID();
+    sessionStorage.setItem("trace_id", traceId);
+  }
+  headers["X-Trace-Id"] = traceId;
   if (token) {
     headers.Authorization = `Bearer ${token}`;
+  } else if (localStorage.getItem("dev_mode") === "1") {
+    headers["X-User-Id"] =
+      localStorage.getItem("dev_user_id") ?? "00000000-0000-0000-0000-000000000001";
   }
   return headers;
 }
+
+import { _requestEnd, _requestStart } from "@/composables/useRequestLoading";
 
 async function parseError(res: Response): Promise<ApiError> {
   let code = "HTTP_ERROR";
   let message = res.statusText;
   try {
     const body = await res.json();
-    if (body.detail?.code) {
+    // 优先读取标准格式 { code, message }
+    if (body.code && body.message) {
+      code = body.code;
+      message = body.message;
+    } else if (body.detail?.code) {
       code = body.detail.code;
       message = body.detail.message ?? message;
+    } else if (body.error?.code) {
+      // 兼容旧版限流格式
+      code = body.error.code;
+      message = body.error.message ?? message;
+    } else if (Array.isArray(body.detail)) {
+      const first = body.detail[0];
+      code = first?.type ?? "VALIDATION_ERROR";
+      message = first?.msg ?? message;
+      const field = (first?.loc as unknown[] | undefined)
+        ?.filter((part) => part !== "body")
+        .join(".");
+      if (field) {
+        message = `${field}: ${message}`;
+      }
+    } else if (typeof body.detail === "string") {
+      message = body.detail;
     } else if (body.message) {
       message = body.message;
     }
@@ -37,25 +97,32 @@ async function parseError(res: Response): Promise<ApiError> {
   return new ApiError(res.status, code, message);
 }
 
+// ── 公共 API ─────────────────────────────────────────────
+
 export async function apiJson<T>(
   path: string,
   init: RequestInit = {},
 ): Promise<T> {
-  const headers = new Headers(init.headers);
-  if (!headers.has("Content-Type") && init.body && !(init.body instanceof FormData)) {
-    headers.set("Content-Type", "application/json");
+  _requestStart();
+  try {
+    const headers = new Headers(init.headers);
+    if (!headers.has("Content-Type") && init.body && !(init.body instanceof FormData)) {
+      headers.set("Content-Type", "application/json");
+    }
+    for (const [k, v] of Object.entries(authHeaders())) {
+      headers.set(k, v);
+    }
+    const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
+    if (!res.ok) {
+      throw await parseError(res);
+    }
+    if (res.status === 204) {
+      return undefined as T;
+    }
+    return (await res.json()) as T;
+  } finally {
+    _requestEnd();
   }
-  for (const [k, v] of Object.entries(authHeaders())) {
-    headers.set(k, v);
-  }
-  const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
-  if (!res.ok) {
-    throw await parseError(res);
-  }
-  if (res.status === 204) {
-    return undefined as T;
-  }
-  return (await res.json()) as T;
 }
 
 export async function healthCheck(): Promise<boolean> {
@@ -67,33 +134,20 @@ export async function healthCheck(): Promise<boolean> {
   }
 }
 
-export interface QuotaSummary {
-  chars_used: number;
-  chars_remaining: number;
-  monthly_char_limit: number;
-  trainings_used: number;
-  trainings_remaining: number;
-  monthly_train_limit: number;
-}
+// ── 业务 API 函数 ────────────────────────────────────────
 
-export interface LoginResponse {
-  access_token: string;
-  user: { user_id: string; phone: string };
-  quota: QuotaSummary | null;
-}
-
-export interface JobResponse {
-  job_id: string;
-  job_type: string;
-  status: string;
-  error_message?: string | null;
-  audio_url?: string | null;
-  voice_version_id?: string | null;
-  line_count?: number | null;
-  succeeded_count?: number | null;
-  failed_count?: number | null;
-  zip_url?: string | null;
-}
+import type {
+  LoginResponse,
+  QuotaSummary,
+  JobResponse,
+  SynthesisBody,
+  WatermarkDetectResult,
+  EmotionAnalyzeResult,
+  EmotionBatchResult,
+  FingerprintEnrollResponse,
+  FingerprintSearchResponse,
+  FingerprintStatusResponse,
+} from "@/types/api";
 
 export async function sendSms(phone: string) {
   return apiJson<{ mock_code?: string | null; message: string }>("/api/v1/auth/sms/send", {
@@ -155,16 +209,37 @@ export async function startTrain(voiceId: string, voiceAssetId: string) {
   });
 }
 
-export async function synthesize(voiceVersionId: string, text: string, aiDisclosureAck = true) {
+export async function synthesize(
+  body: SynthesisBody,
+  aiDisclosureAck = true,
+) {
   return apiJson<{ job_id: string; status: string }>("/api/v1/synthesis", {
     method: "POST",
     body: JSON.stringify({
-      voice_version_id: voiceVersionId,
-      text,
       format: "wav",
-      ai_disclosure_ack: aiDisclosureAck,
+      ...body,
+      ai_disclosure_ack: body.ai_disclosure_ack ?? aiDisclosureAck,
     }),
   });
+}
+
+/** @deprecated Use synthesize(body) with full options */
+export async function synthesizeSimple(
+  voiceVersionId: string,
+  text: string,
+  aiDisclosureAck = true,
+  opts?: { temperature?: number; speed_factor?: number; top_p?: number },
+) {
+  return synthesize(
+    {
+      voice_version_id: voiceVersionId,
+      text,
+      temperature: opts?.temperature,
+      speed_factor: opts?.speed_factor,
+      top_p: opts?.top_p,
+    },
+    aiDisclosureAck,
+  );
 }
 
 export function exportDownloadUrl(jobId: string): string {
@@ -190,4 +265,107 @@ export async function pollJob(
     await new Promise((r) => setTimeout(r, 2000));
   }
   throw new Error("任务超时，请稍后在任务 ID 处手动查询");
+}
+
+/** Upload a WAV file for watermark detection */
+export async function detectWatermark(file: File): Promise<WatermarkDetectResult> {
+  const form = new FormData();
+  form.append("file", file);
+  return apiJson<WatermarkDetectResult>("/api/v1/watermark/detect", {
+    method: "POST",
+    body: form,
+  });
+}
+
+// ── REQ-027: Auto emotion detection ──────────────────────
+
+/** Analyze a single text for auto emotion detection */
+export async function analyzeEmotion(text: string): Promise<EmotionAnalyzeResult> {
+  return apiJson<EmotionAnalyzeResult>("/api/v1/emotion/analyze", {
+    method: "POST",
+    body: JSON.stringify({ text }),
+  });
+}
+
+/** Analyze multiple text segments for emotion in one request */
+export async function analyzeEmotionBatch(texts: string[]): Promise<EmotionBatchResult> {
+  return apiJson<EmotionBatchResult>("/api/v1/emotion/analyze-batch", {
+    method: "POST",
+    body: JSON.stringify({ texts }),
+  });
+}
+
+// ── REQ-025: Audio fingerprint ───────────────────────────
+
+/** Enroll an audio fingerprint by uploading a WAV file */
+export async function enrollFingerprint(file: File, jobId: string): Promise<FingerprintEnrollResponse> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("job_id", jobId);
+  return apiJson<FingerprintEnrollResponse>("/api/v1/fingerprint/enroll-audio", {
+    method: "POST",
+    body: form,
+  });
+}
+
+/** Search for matching fingerprints by uploading a WAV file */
+export async function searchFingerprint(
+  file: File,
+  threshold = 0.05,
+  maxResults = 10,
+): Promise<FingerprintSearchResponse> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("threshold", String(threshold));
+  form.append("max_results", String(maxResults));
+  return apiJson<FingerprintSearchResponse>("/api/v1/fingerprint/search", {
+    method: "POST",
+    body: form,
+  });
+}
+
+/** Get fingerprint store status */
+export async function fingerprintStatus(): Promise<FingerprintStatusResponse> {
+  return apiJson<FingerprintStatusResponse>("/api/v1/fingerprint/status");
+}
+
+// ── Batch Lines (行级状态) ──────────────────────────────
+
+export interface BatchLineItem {
+  line_index: number;
+  role: string;
+  text: string;
+  voice_version_id: string;
+  status: "queued" | "running" | "succeeded" | "failed";
+  audio_url: string | null;
+  duration_sec: number | null;
+  export_compliant: boolean;
+  label_type: string | null;
+  labeled_at: string | null;
+  error_code: string | null;
+  error_message: string | null;
+}
+
+export interface BatchLinesData {
+  job_id: string;
+  lines: BatchLineItem[];
+  total: number;
+  succeeded: number;
+  failed: number;
+  queued: number;
+  running: number;
+}
+
+export async function getBatchLines(jobId: string): Promise<BatchLinesData> {
+  return apiJson<BatchLinesData>(`/api/v1/jobs/${jobId}/lines`);
+}
+
+export async function retryBatchLines(
+  jobId: string,
+  lineIndices: number[],
+): Promise<BatchLinesData> {
+  return apiJson<BatchLinesData>(`/api/v1/jobs/${jobId}/lines/retry`, {
+    method: "POST",
+    body: JSON.stringify({ line_indices: lineIndices }),
+  });
 }

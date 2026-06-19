@@ -20,7 +20,10 @@ def client():
 
 
 def test_train_rejects_forbidden(client):
-    with patch("apps.api.routes.voices.TrainingService") as svc_cls:
+    with patch("apps.api.routes.voices.KycService") as kyc_cls, patch(
+        "apps.api.routes.voices.TrainingService"
+    ) as svc_cls:
+        kyc_cls.return_value.ensure_verified_for_train.return_value = None
         svc = svc_cls.return_value
         svc.resolve_train_inputs.return_value = (None, False, False, False, False)
         r = client.post(
@@ -28,11 +31,14 @@ def test_train_rejects_forbidden(client):
             json={"model_tag": "gsv-v2pro-20250606"},
         )
     assert r.status_code == 403
-    assert r.json()["detail"]["code"] == "FORBIDDEN"
+    assert r.json()["code"] == "FORBIDDEN"
 
 
 def test_train_rejects_consent_required(client):
-    with patch("apps.api.routes.voices.TrainingService") as svc_cls:
+    with patch("apps.api.routes.voices.KycService") as kyc_cls, patch(
+        "apps.api.routes.voices.TrainingService"
+    ) as svc_cls:
+        kyc_cls.return_value.ensure_verified_for_train.return_value = None
         svc = svc_cls.return_value
         svc.resolve_train_inputs.return_value = (None, True, False, True, True)
         r = client.post(
@@ -40,11 +46,14 @@ def test_train_rejects_consent_required(client):
             json={"model_tag": "gsv-v2pro-20250606"},
         )
     assert r.status_code == 403
-    assert r.json()["detail"]["code"] == "CONSENT_REQUIRED"
+    assert r.json()["code"] == "CONSENT_REQUIRED"
 
 
 def test_train_rejects_asset_not_ready(client):
-    with patch("apps.api.routes.voices.TrainingService") as svc_cls:
+    with patch("apps.api.routes.voices.KycService") as kyc_cls, patch(
+        "apps.api.routes.voices.TrainingService"
+    ) as svc_cls:
+        kyc_cls.return_value.ensure_verified_for_train.return_value = None
         svc = svc_cls.return_value
         svc.resolve_train_inputs.return_value = (None, True, True, False, False)
         r = client.post(
@@ -52,11 +61,14 @@ def test_train_rejects_asset_not_ready(client):
             json={"model_tag": "gsv-v2pro-20250606"},
         )
     assert r.status_code == 403
-    assert r.json()["detail"]["code"] == "ASSET_NOT_READY"
+    assert r.json()["code"] == "ASSET_NOT_READY"
 
 
 def test_train_rejects_invalid_model_tag(client):
-    with patch("apps.api.routes.voices.TrainingService") as svc_cls:
+    with patch("apps.api.routes.voices.KycService") as kyc_cls, patch(
+        "apps.api.routes.voices.TrainingService"
+    ) as svc_cls:
+        kyc_cls.return_value.ensure_verified_for_train.return_value = None
         svc = svc_cls.return_value
         svc.resolve_train_inputs.return_value = (MagicMock(), True, True, True, True)
         r = client.post(
@@ -64,4 +76,4 @@ def test_train_rejects_invalid_model_tag(client):
             json={"model_tag": "unknown-tag"},
         )
     assert r.status_code == 400
-    assert r.json()["detail"]["code"] == "INVALID_MODEL_TAG"
+    assert r.json()["code"] == "INVALID_MODEL_TAG"

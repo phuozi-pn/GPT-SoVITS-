@@ -5,6 +5,8 @@ import re
 from pathlib import Path
 from uuid import UUID
 
+from sqlalchemy.orm import Session
+
 from domains.compliance.export import (
     COMPLIANCE_README,
     apply_compliance_label,
@@ -12,13 +14,13 @@ from domains.compliance.export import (
     manifest_json,
 )
 from domains.compliance.gateway import ComplianceError, ComplianceGateway
-from voice_platform.config import get_db_session, get_settings
+from voice_platform.config import get_settings
 from voice_platform.job.models import VoiceVersionRow
-from voice_platform.job.queue import RedisJobQueue
-from voice_platform.job.repository import JobRepository
-from voice_platform.job.schemas import BatchLinePayload, BatchPayload, InferPayload, JobStatus
+from voice_platform.job.repository import BatchLineRepository, JobRepository
+from voice_platform.job.schemas import BatchLinePayload, BatchLineStatus, BatchPayload, InferPayload
 from voice_platform.quota.repository import QuotaRepository
 from voice_platform.storage.local import LocalStorage
+from workers.base import BaseWorker
 from workers.infer.runner import EngineAdapter, InferContext, MockEngineAdapter
 
 logger = logging.getLogger(__name__)
@@ -32,41 +34,126 @@ def _safe_role(name: str) -> str:
     return cleaned or "role"
 
 
-def run_once(*, use_mock: bool = False) -> bool:
-    queue = RedisJobQueue()
-    job_id = queue.dequeue_batch(timeout_sec=5)
-    if not job_id:
-        return False
+class BatchWorker(BaseWorker):
+    """CSV 批量配音 + ZIP 打包 Worker。"""
 
-    session = get_db_session()
-    jobs = JobRepository(session)
-    storage = LocalStorage()
-    adapter = MockEngineAdapter() if use_mock else EngineAdapter()
-    settings = get_settings()
+    def __init__(self, *, use_mock: bool | None = None) -> None:
+        super().__init__()
+        self._mock = use_mock
+        self._adapter: EngineAdapter | MockEngineAdapter | None = None
+        self._storage: LocalStorage | None = None
 
-    record = jobs.get_job(job_id)
-    if not record or record.status not in (JobStatus.QUEUED, JobStatus.RUNNING):
-        session.close()
-        return True
+    def worker_name(self) -> str:
+        return "Batch"
 
-    jobs.mark_running(job_id)
-    try:
+    def queue_key(self) -> str:
+        return "batch"
+
+    def use_mock(self) -> bool:
+        if self._mock is not None:
+            return self._mock
+        return get_settings().engine_mock
+
+    def prepare(self, session: Session) -> None:
+        self._adapter = MockEngineAdapter() if self.use_mock() else EngineAdapter()
+        self._storage = LocalStorage()
+
+    def process(self, *, job_id: UUID, session: Session, record) -> dict:
+        assert self._adapter is not None
+        assert self._storage is not None
+
         payload = BatchPayload.model_validate(record.payload)
+        settings = get_settings()
+        logger.info(
+            "batch start job_id=%s trace_id=%s lines=%s",
+            job_id,
+            record.trace_id,
+            len(payload.lines),
+        )
+
+        line_repo = BatchLineRepository(session)
+
+        # 首次执行：创建行级记录（Worker 崩溃恢复时跳过已成功的行）
+        existing_lines = line_repo.get_lines(job_id)
+        if existing_lines.total == 0:
+            line_repo.create_lines(
+                job_id=job_id,
+                lines=[
+                    {
+                        "index": line.index,
+                        "role": line.role,
+                        "text": line.text,
+                        "voice_version_id": line.voice_version_id,
+                    }
+                    for line in payload.lines
+                ],
+            )
+
         lines = payload.lines
         succeeded: list[dict] = []
         failed: list[dict] = []
 
         for line in lines:
+            # 跳过已成功的行（Worker 崩溃恢复）
+            existing = line_repo.get_lines(job_id)
+            already_done = {
+                l.line_index
+                for l in existing.lines
+                if l.status == BatchLineStatus.SUCCEEDED
+            }
+            if line.index in already_done:
+                logger.info("batch line already done job=%s idx=%s", job_id, line.index)
+                succeeded.append(
+                    {
+                        "index": line.index,
+                        "role": line.role,
+                        "text": line.text,
+                        "audio_url": next(
+                            (l.audio_url for l in existing.lines if l.line_index == line.index),
+                            "",
+                        ),
+                        "duration_sec": next(
+                            (l.duration_sec or 0 for l in existing.lines if l.line_index == line.index),
+                            0,
+                        ),
+                        "export_compliant": next(
+                            (l.export_compliant for l in existing.lines if l.line_index == line.index),
+                            False,
+                        ),
+                        "label_type": next(
+                            (l.label_type for l in existing.lines if l.line_index == line.index),
+                            None,
+                        ),
+                        "labeled_at": next(
+                            (l.labeled_at.isoformat() if l.labeled_at else None for l in existing.lines if l.line_index == line.index),
+                            None,
+                        ),
+                    }
+                )
+                continue
+
+            line_repo.mark_line_running(job_id, line.index)
+
             try:
                 audio_url, duration, label_meta = _synthesize_line(
-                    adapter=adapter,
-                    storage=storage,
+                    adapter=self._adapter,
+                    storage=self._storage,
                     owner_user_id=record.owner_user_id,
                     batch_job_id=job_id,
                     line=line,
                     session=session,
                     apply_label=settings.compliance_export_required,
                     label_type=settings.compliance_label_type,
+                )
+                export_compliant = label_meta.get("export_compliant", False)
+                line_repo.mark_line_succeeded(
+                    job_id,
+                    line.index,
+                    audio_url=audio_url,
+                    duration_sec=duration,
+                    export_compliant=export_compliant,
+                    label_type=label_meta.get("label_type"),
+                    labeled_at=label_meta.get("labeled_at"),
                 )
                 succeeded.append(
                     {
@@ -75,12 +162,15 @@ def run_once(*, use_mock: bool = False) -> bool:
                         "text": line.text,
                         "audio_url": audio_url,
                         "duration_sec": duration,
-                        "export_compliant": label_meta.get("export_compliant", False),
+                        "export_compliant": export_compliant,
                         "label_type": label_meta.get("label_type"),
                         "labeled_at": label_meta.get("labeled_at"),
                     }
                 )
             except ComplianceError as exc:
+                line_repo.mark_line_failed(
+                    job_id, line.index, error_code=exc.code, error_message=exc.message
+                )
                 failed.append(
                     {
                         "index": line.index,
@@ -91,6 +181,9 @@ def run_once(*, use_mock: bool = False) -> bool:
                 )
             except Exception as exc:
                 logger.exception("batch line failed job=%s idx=%s", job_id, line.index)
+                line_repo.mark_line_failed(
+                    job_id, line.index, error_code="JOB_FAILED", error_message=str(exc)
+                )
                 failed.append(
                     {
                         "index": line.index,
@@ -102,9 +195,9 @@ def run_once(*, use_mock: bool = False) -> bool:
 
         zip_url = None
         if succeeded:
-            zip_url = storage.public_url(
+            zip_url = self._storage.public_url(
                 _build_zip(
-                    storage=storage,
+                    storage=self._storage,
                     user_id=record.owner_user_id,
                     job_id=job_id,
                     succeeded=succeeded,
@@ -127,17 +220,12 @@ def run_once(*, use_mock: bool = False) -> bool:
             "zip_url": zip_url,
             "export_compliant": bool(succeeded and settings.compliance_export_required),
         }
+
         if not succeeded:
-            jobs.mark_failed(job_id, "All batch lines failed")
-        else:
-            jobs.mark_succeeded(job_id, result)
-            logger.info("batch done job=%s ok=%s fail=%s", job_id, len(succeeded), len(failed))
-    except Exception as exc:
-        logger.exception("batch failed job_id=%s", job_id)
-        jobs.mark_failed(job_id, str(exc))
-    finally:
-        session.close()
-    return True
+            raise RuntimeError("All batch lines failed")
+
+        logger.info("batch done job=%s ok=%s fail=%s", job_id, len(succeeded), len(failed))
+        return result
 
 
 def _synthesize_line(
@@ -165,9 +253,21 @@ def _synthesize_line(
     audio_bytes = adapter.synthesize(ctx)
     label_meta: dict = {}
     if apply_label:
+        watermark = None
+        try:
+            from voice_platform.watermark.embedder import build_watermark_payload
+
+            watermark = build_watermark_payload(
+                user_id=str(owner_user_id),
+                voice_id=str(line.voice_version_id),
+                job_id=str(batch_job_id),
+            )
+        except Exception:
+            pass
         audio_bytes, label_meta = apply_compliance_label(
             audio_bytes,
             label_type=label_type,
+            watermark=watermark,
         )
     role = _safe_role(line.role)
     rel = storage.save_bytes(
@@ -221,16 +321,19 @@ def _build_zip(
 
 
 def run_loop(*, use_mock: bool = False, poll_interval_sec: float = 1.0) -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    logger.info("Batch worker started mock=%s", use_mock)
-    while True:
-        processed = run_once(use_mock=use_mock)
-        if not processed:
-            import time
-
-            time.sleep(poll_interval_sec)
+    BatchWorker(use_mock=use_mock).run_loop(poll_interval_sec=poll_interval_sec)
 
 
 if __name__ == "__main__":
+    import os
+
+    from voice_platform.config import get_settings
+    from voice_platform.observability.metrics import start_metrics_server
+    from workers.health import start_health_server
+
     settings = get_settings()
-    run_loop(use_mock=settings.engine_mock)
+    worker = BatchWorker()
+    worker.use_mock = lambda: settings.engine_mock
+    start_health_server(worker, port=int(os.environ.get("WORKER_HEALTH_PORT", "8083")))
+    start_metrics_server(port=int(os.environ.get("METRICS_PORT", "9093")))
+    worker.run_loop()

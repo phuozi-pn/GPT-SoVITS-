@@ -1,0 +1,176 @@
+@theme {
+  /* ═══════════════════════════════════════════════════════════
+     AI 语音合成深度工作站 · 动态色彩科学
+     灵感源自：精密仪器、黑胶唱机、文学叙事、深夜电台
+     严禁纯黑或高饱和度互补色。动态主色根据发音人特质切换。
+     ═══════════════════════════════════════════════════════════ */
+
+  /* ── 深色基调 · 黑曜石灰 ────────────────────────── */
+  --bg-primary: #181C22;
+  --bg-secondary: #14181E;
+  --bg-tertiary: #1C2026;
+  --bg-surface: #1E2229;
+  --bg-surface-raised: #242830;
+  --bg-surface-glass: rgb(30 34 41 / 0.92);
+  --bg-surface-muted: rgb(24 28 34 / 0.78);
+
+  /* ── 文字 · 由亮至暗 ────────────────────────────── */
+  --color-ink: #EDEBE7;          /* 主文本 — 暖白 */
+  --color-ink-muted: #9B9792;    /* 次要文本 — 暖灰 */
+  --color-ink-faint: #6B6762;    /* 辅助文本 — 暗灰 */
+  --color-pine-ink: rgb(237 235 231 / 0.82);
+
+  /* ── 主题暖色 · 琥珀金 ──────────────────────────── */
+  --theme-warm: #E5A93C;         /* 琥珀金 — 温润、治愈、深夜电台 */
+  --theme-warm-glow: rgb(229 169 60 / 0.25);
+  --theme-warm-soft: rgb(229 169 60 / 0.1);
+  --theme-warm-dim: rgb(229 169 60 / 0.06);
+
+  /* ── 主题冷色 · 暮光紫 ──────────────────────────── */
+  --theme-cool: #7A6785;         /* 暮光紫 — 沉稳、严肃、专业叙事 */
+  --theme-cool-glow: rgb(122 103 133 / 0.2);
+  --theme-cool-soft: rgb(122 103 133 / 0.08);
+
+  /* ── 朱砂 · 点睛之红 ────────────────────────────── */
+  --color-cinnabar: #C85A4A;
+  --color-cinnabar-soft: rgb(200 90 74 / 0.1);
+  --color-peak-red: #C85A4A;
+
+  /* ── 松绿 · 完成/确认 ────────────────────────────── */
+  --color-success: #5A8A6A;
+  --color-success-soft: rgb(90 138 106 / 0.1);
+
+  /* ── 靛蓝 · 沉静辅色 ────────────────────────────── */
+  --color-indigo: #8B95B0;
+  --color-indigo-light: #A3ADD0;
+  --color-indigo-soft: rgb(139 149 176 / 0.08);
+  --color-indigo-mist: rgb(139 149 176 / 0.12);
+  --color-indigo-smoke: rgb(139 149 176 / 0.2);
+
+  /* ── 微光边框 ────────────────────────────────────── */
+  --border-glow: rgb(255 255 255 / 0.1);
+  --border-subtle: rgb(255 255 255 / 0.07);
+  --border-strong: rgb(255 255 255 / 0.15);
+
+  /* ── 旧铜 · 金属质感 ────────────────────────────── */
+  --color-brushed: #2D323A;
+  --color-brushed-dark: #7D7974;
+  --color-cold-gold: rgb(229 169 60 / 0.15);
+
+  /* ── 纸基兼容 (深色降级用) ──────────────────────── */
+  --color-xuan: #1C2129;
+  --color-xuan-light: #1F242C;
+  --color-xuan-warm: #1A1E25;
+  --color-paper: #1C2129;
+  --color-paper-dark: #171B22;
+  --color-surface: #1A1E24;
+  --color-surface-raised: #1F232A;
+
+  /* ── 琥珀金兼容别名 ──────────────────────────────── */
+  --color-accent: #E5A93C;
+  --color-accent-soft: rgb(229 169 60 / 0.08);
+  --color-sunset: #E5A93C;
+  --color-sunset-glow: rgb(229 169 60 / 0.15);
+  --color-highlight: #F0C060;
+  --color-vu-amber: #E5A93C;
+  --color-vu-amber-deep: #C89030;
+  --color-vu-amber-soft: rgb(229 169 60 / 0.08);
+  --color-vu-amber-glow: rgb(229 169 60 / 0.18);
+  --color-vu-amber-dim: rgb(229 169 60 / 0.12);
+
+  /* ── 警示 ────────────────────────────────────────── */
+  --color-warn-soft: rgb(229 169 60 / 0.12);
+  --color-warn-border: rgb(229 169 60 / 0.3);
+
+  /* ── 分割线 ──────────────────────────────────────── */
+  --color-line: rgb(255 255 255 / 0.08);
+  --color-line-strong: rgb(255 255 255 / 0.12);
+
+  /* ── 字体冲突美学 ────────────────────────────────── */
+  /* 数据与参数：几何无衬线体（秩序与科技） */
+  --font-body: "Inter", "SF Pro", "Noto Sans SC", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "IBM Plex Mono", ui-monospace, Consolas, monospace;
+  /* 文本内容与AI评述：精细衬线体（文学叙事感） */
+  --font-scroll: "Playfair Display", "Noto Serif SC", "Songti SC", Georgia, serif;
+  --font-display: "Playfair Display", "Noto Serif SC", "Fraunces", Georgia, serif;
+
+  /* ── 圆角体系 ────────────────────────────────────── */
+  --radius-ui: 4px;
+  --radius-module: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 999px;
+
+  /* ── 阴影体系 ────────────────────────────────────── */
+  --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.25), 0 8px 32px rgb(0 0 0 / 0.4);
+  --shadow-lift: 0 20px 48px rgb(0 0 0 / 0.6);
+  --shadow-inset: inset 0 1px 0 rgb(255 255 255 / 0.05);
+  --shadow-card: 0 1px 3px rgb(0 0 0 / 0.25), 0 4px 16px rgb(0 0 0 / 0.2);
+  --shadow-dialog: 0 0 0 1px rgb(255 255 255 / 0.05), 0 24px 64px rgb(0 0 0 / 0.6);
+  --shadow-glow-warm: 0 0 0 3px var(--theme-warm-soft), 0 2px 12px var(--theme-warm-glow);
+  --shadow-glow-cool: 0 0 0 3px var(--theme-cool-soft), 0 2px 12px var(--theme-cool-glow);
+
+  /* ── 物理阻尼动画曲线 (白皮书标准) ──────────────── */
+  --ease-out: cubic-bezier(0.25, 1, 0.5, 1);       /* 前快后慢，收尾极度优雅 */
+  --ease-spring: cubic-bezier(0.34, 1.2, 0.64, 1);  /* 微弹，无大幅度回弹 */
+  --ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-molasses: cubic-bezier(0.16, 1, 0.3, 1);   /* 慢启动，丝绸质感 */
+  --ease-breath: cubic-bezier(0.45, 0, 0.55, 1);     /* 呼吸感，用于背景漂移 */
+  --duration-fast: 0.15s;
+  --duration-normal: 0.25s;
+  --duration-slow: 0.4s;
+  --duration-lazy: 0.6s;
+  --duration-glacial: 1.2s;
+  --duration-eternal: 20s;
+
+  /* ── Phonia 品牌专属令牌 ──────────────────────── */
+  --brand-phonia-gold: #E5A93C;
+  --brand-phonia-deep: #0A0B0D;
+  --brand-phonia-warm: #111418;
+  --brand-phonia-glow: rgb(229 169 60 / 0.5);
+  --brand-phonia-dim: rgb(229 169 60 / 0.2);
+  --brand-phonia-seal: #C85A4A;
+  --brand-phonia-text: #E4E2DF;
+  --brand-font-display: "Playfair Display", "Noto Serif SC", Georgia, serif;
+  --brand-font-latin: "Playfair Display", "Cormorant Garamond", Georgia, serif;
+
+  /* ── Splash 序章专属令牌 ────────────────────────── */
+  --splash-ink-deep: #0A0B0D;
+  --splash-ink-warm: #111418;
+  --splash-gold: #E5A93C;
+  --splash-gold-glow: rgb(229 169 60 / 0.5);
+  --splash-gold-dim: rgb(229 169 60 / 0.25);
+  --splash-text: #E4E2DF;
+  --splash-seal: #C85A4A;
+  --splash-duration-brand: 1.2s;
+  --splash-duration-total: 3.5s;
+
+  /* ── 间距体系 ────────────────────────────────────── */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 24px;
+  --space-2xl: 32px;
+  --space-3xl: 48px;
+  --space-4xl: 64px;
+
+  /* ── 布局 ────────────────────────────────────────── */
+  --page-max: 1120px;
+  --section-gap: clamp(64px, 10vw, 120px);
+  --sidebar-width: 280px;
+  --toolbar-height: 44px;
+
+  /* ── 装饰色彩 (半透明叠加用) ────────────────────── */
+  --deco-amber-wash: rgb(229 169 60 / 0.04);
+  --deco-amber-glow: rgb(229 169 60 / 0.08);
+  --deco-ink-wash: rgb(228 226 223 / 0.015);
+  --deco-cinnabar-dust: rgb(200 90 74 / 0.025);
+  --deco-indigo-mist: rgb(90 96 114 / 0.025);
+  --deco-gold-thread: rgb(229 169 60 / 0.06);
+
+  /* ── 装饰粒子大小 ────────────────────────────────── */
+  --particle-size-sm: 2px;
+  --particle-size-md: 4px;
+  --particle-size-lg: 8px;
+}

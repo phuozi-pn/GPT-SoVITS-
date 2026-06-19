@@ -81,7 +81,7 @@ def test_login_invalid_otp(client):
         store.verify.return_value = False
         r = client.post("/api/v1/auth/login", json={"phone": "13800000099", "code": "000000"})
     assert r.status_code == 401
-    assert r.json()["detail"]["code"] == "INVALID_OTP"
+    assert r.json()["code"] == "INVALID_OTP"
 
 
 def test_login_account_locked(client):
@@ -90,7 +90,7 @@ def test_login_account_locked(client):
         store.is_locked.return_value = True
         r = client.post("/api/v1/auth/login", json={"phone": "13800000099", "code": "654321"})
     assert r.status_code == 429
-    assert r.json()["detail"]["code"] == "ACCOUNT_LOCKED"
+    assert r.json()["code"] == "ACCOUNT_LOCKED"
 
 
 def test_synthesis_requires_bearer_when_auth_enabled(client_strict_auth):
@@ -99,7 +99,7 @@ def test_synthesis_requires_bearer_when_auth_enabled(client_strict_auth):
         json={"voice_version_id": VOICE, "text": "你好"},
     )
     assert r.status_code == 401
-    assert r.json()["detail"]["code"] == "AUTH_REQUIRED"
+    assert r.json()["code"] == "AUTH_REQUIRED"
 
 
 def test_synthesis_with_bearer_token(client_strict_auth):
@@ -107,12 +107,15 @@ def test_synthesis_with_bearer_token(client_strict_auth):
 
     token = create_access_token(user_id=UUID(DEV_USER))
     with (
-        patch("apps.api.routes.synthesis.VoiceVersionRepository") as repo_cls,
-        patch("apps.api.routes.synthesis.QuotaRepository") as quota_cls,
+        patch("apps.api.routes.synthesis.user_can_access_voice_version") as access_fn,
+        patch("domains.quota.service.QuotaRepository") as quota_cls,
+        patch("apps.api.routes.synthesis.LicensingService") as lic_cls,
         patch("apps.api.routes.synthesis.SynthesisService") as svc_cls,
     ):
-        repo_cls.return_value.user_can_access.return_value = True
+        access_fn.return_value = True
         quota_cls.return_value.ensure_chars_available.return_value = None
+        lic_cls.return_value.check_project_domain.return_value = None
+        lic_cls.return_value.ensure_purchase_quota.return_value = None
         from voice_platform.job.schemas import JobStatus, JobSubmitResponse, JobType
 
         svc_cls.return_value.submit.return_value = JobSubmitResponse(

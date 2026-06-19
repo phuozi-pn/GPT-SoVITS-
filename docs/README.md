@@ -88,6 +88,7 @@ GPT/                          # 仓库根 — 见 ../README.md
 | 训练 API + Worker | 同上 + [engine §11](../infra/engine/README.md) | Mock ✅；真微调 Spike ✅ |
 | JWT / 配额 | 模块 A | `voice_platform/auth` `quota` ✅ |
 | 合规门禁 | 模块 B/G | `domains/compliance` + pytest ✅ |
+| Web 复古制作台 | [页面规范](./architecture/2026-06-10-web-ui-page-spec-复古录音室页面规范.md) | `apps/web` ✅ |
 
 ## 维护约定
 

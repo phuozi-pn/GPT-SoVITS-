@@ -39,4 +39,15 @@ docker compose -f docker-compose.dev.yml down
 
 启动 API 与 Worker： [apps/api/README.md](../../apps/api/README.md)
 
+## W4 · 镜像发布（可选）
+
+```powershell
+cd C:\Users\panta\Desktop\GPT
+.\scripts\platform_build_image.ps1 -Tag 20260610-120000
+.\scripts\platform_release.ps1 -Tag 20260610-120000
+.\scripts\platform_rollback.ps1 -StepsBack 1
+```
+
+见 [W4 Hardening 文档](../../docs/architecture/2026-06-10-w4-hardening-可观测与回滚.md)。
+
 引擎 GPU 容器： [../engine/README.md](../engine/README.md)（独立 compose，在上游仓库执行）。

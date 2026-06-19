@@ -387,8 +387,9 @@ Worker 会 staging 到 `{ENGINE_TRAIN_ROOT}/logs/platform_staging/{job_id}/`，�
 
 ```powershell
 cd C:\Users\panta\Desktop\GPT
+.\scripts\engine_sync_env.ps1              # 自动把运行中容器名写入 .env
 .\scripts\engine_api_v2.ps1 -Action status
-.\scripts\engine_api_v2.ps1 -Action start      # 约 1-2 min
+.\scripts\engine_api_v2.ps1 -Action start      # start 也会自动 sync；约 1-2 min
 .\scripts\engine_api_v2.ps1 -Action synthesize # → finetuned_spike.wav
 ```
 

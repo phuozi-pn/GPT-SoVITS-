@@ -9,6 +9,8 @@ export interface VoiceVersionSummary {
   label?: string | null;
   ref_text?: string | null;
   imported?: boolean;
+  granted?: boolean;
+  created_at?: string | null;
 }
 
 export interface ProjectRole {

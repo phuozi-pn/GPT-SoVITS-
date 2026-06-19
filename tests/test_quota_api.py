@@ -40,7 +40,7 @@ def _summary(*, chars_used=0, trainings_used=0, chars_remaining=20000, trainings
 
 
 def test_get_quota(client):
-    with patch("apps.api.routes.usage.QuotaRepository") as repo_cls:
+    with patch("domains.quota.service.QuotaRepository") as repo_cls:
         repo_cls.return_value.get_summary.return_value = _summary(chars_used=100)
         r = client.get("/api/v1/usage/quota")
     assert r.status_code == 200
@@ -50,34 +50,40 @@ def test_get_quota(client):
 
 
 def test_synthesis_rejects_quota_exceeded(client):
-    with patch("apps.api.routes.synthesis.VoiceVersionRepository") as vv_cls:
-        vv_cls.return_value.user_can_access.return_value = True
-        with patch("apps.api.routes.synthesis.QuotaRepository") as quota_cls:
-            quota_cls.return_value.ensure_chars_available.side_effect = QuotaExceededError(
-                quota_type="chars",
-                message="本月合成字符额度不足，请升级套餐或下月再试",
-                required=100,
-                remaining=50,
-                monthly_limit=20000,
-                used=19950,
-                reset_at=_summary().reset_at,
-            )
-            r = client.post(
-                "/api/v1/synthesis",
-                json={"voice_version_id": VOICE, "text": "你好世界" * 20},
-            )
+    with patch("apps.api.routes.synthesis.user_can_access_voice_version") as vv_cls:
+        vv_cls.return_value = True
+        with patch("apps.api.routes.synthesis.LicensingService") as lic_cls:
+            lic_cls.return_value.check_project_domain.return_value = None
+            lic_cls.return_value.ensure_purchase_quota.return_value = None
+            with patch("domains.quota.service.QuotaRepository") as quota_cls:
+                quota_cls.return_value.ensure_chars_available.side_effect = QuotaExceededError(
+                    quota_type="chars",
+                    message="本月合成字符额度不足，请升级套餐或下月再试",
+                    required=100,
+                    remaining=50,
+                    monthly_limit=20000,
+                    used=19950,
+                    reset_at=_summary().reset_at,
+                )
+                r = client.post(
+                    "/api/v1/synthesis",
+                    json={"voice_version_id": VOICE, "text": "你好世界" * 20},
+                )
     assert r.status_code == 402
-    detail = r.json()["detail"]
+    detail = r.json()
     assert detail["code"] == "QUOTA_EXCEEDED"
     assert detail["details"]["quota_type"] == "chars"
     assert detail["details"]["remaining"] == 50
 
 
 def test_train_rejects_quota_exceeded(client):
-    with patch("apps.api.routes.voices.TrainingService") as svc_cls:
+    with patch("apps.api.routes.voices.KycService") as kyc_cls, patch(
+        "apps.api.routes.voices.TrainingService"
+    ) as svc_cls:
+        kyc_cls.return_value.ensure_verified_for_train.return_value = None
         svc = svc_cls.return_value
         svc.resolve_train_inputs.return_value = (MagicMock(), True, True, True, True)
-        with patch("apps.api.routes.voices.QuotaRepository") as quota_cls:
+        with patch("domains.quota.service.QuotaRepository") as quota_cls:
             quota_cls.return_value.ensure_training_available.side_effect = QuotaExceededError(
                 quota_type="train",
                 message="本月训练次数已达上限，请升级套餐或下月再试",
@@ -92,7 +98,7 @@ def test_train_rejects_quota_exceeded(client):
                 json={"model_tag": "gsv-v2pro-20250606"},
             )
     assert r.status_code == 402
-    assert r.json()["detail"]["details"]["quota_type"] == "train"
+    assert r.json()["details"]["quota_type"] == "train"
 
 
 def test_quota_repository_record_idempotent():

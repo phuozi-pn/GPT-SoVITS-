@@ -9,6 +9,7 @@ import pytest
 
 from domains.voices.access import user_can_access_voice_version
 
+ADMIN = UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
 OWNER = UUID("00000000-0000-0000-0000-000000000001")
 OTHER = UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
 VOICE_ID = UUID("11111111-1111-1111-1111-111111111100")
@@ -77,3 +78,84 @@ def test_catalog_list_api(client):
         r = client.get("/api/v1/catalog/voices")
     assert r.status_code == 200
     assert r.json() == []
+
+
+def test_catalog_list_with_tags(client):
+    with patch("apps.api.routes.catalog.MarketplaceService") as svc_cls:
+        svc_cls.return_value.list_catalog.return_value = []
+        r = client.get("/api/v1/catalog/voices?tags=短剧,男声")
+    assert r.status_code == 200
+    svc_cls.return_value.list_catalog.assert_called_once()
+    kwargs = svc_cls.return_value.list_catalog.call_args.kwargs
+    assert kwargs["tags"] == ["短剧", "男声"]
+
+
+def test_catalog_tags_api(client):
+    with patch("apps.api.routes.catalog.MarketplaceService") as svc_cls:
+        svc_cls.return_value.list_catalog_tags.return_value = ["短剧", "男声"]
+        r = client.get("/api/v1/catalog/tags")
+    assert r.status_code == 200
+    assert r.json() == ["短剧", "男声"]
+
+
+def test_grants_issued_api(client):
+    with patch("apps.api.routes.catalog.MarketplaceService") as svc_cls:
+        svc_cls.return_value.list_grants_issued.return_value = []
+        r = client.get("/api/v1/voice-grants/issued")
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+def test_catalog_pending_api(client):
+    with patch("apps.api.routes.catalog.MarketplaceService") as svc_cls:
+        svc_cls.return_value.list_pending_review.return_value = []
+        r = client.get(
+            "/api/v1/catalog/voices/pending",
+            headers={"X-User-Id": str(ADMIN)},
+        )
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+def test_catalog_approve_api(client):
+    with patch("apps.api.routes.catalog.MarketplaceService") as svc_cls:
+        from voice_platform.job.schemas import CatalogEntryResponse
+
+        svc_cls.return_value.approve_catalog_entry.return_value = CatalogEntryResponse(
+            catalog_id=UUID("22222222-2222-2222-2222-222222222222"),
+            voice_version_id=VERSION_ID,
+            voice_id=VOICE_ID,
+            voice_name="demo",
+            title="demo",
+            description="",
+            featured=True,
+            status="published",
+            demo_text="试听",
+            owner_user_id=OWNER,
+        )
+        r = client.post(
+            f"/api/v1/catalog/voices/{UUID('22222222-2222-2222-2222-222222222222')}/approve",
+            headers={"X-User-Id": str(ADMIN)},
+        )
+    assert r.status_code == 200
+    assert r.json()["status"] == "published"
+
+
+def test_list_versions_includes_granted(client):
+    from voice_platform.job.schemas import VoiceVersionSummary
+
+    granted = VoiceVersionSummary(
+        voice_version_id=VERSION_ID,
+        voice_id=VOICE_ID,
+        voice_name="shared",
+        version=1,
+        model_tag="test",
+        granted=True,
+    )
+    with patch("apps.api.routes.voices.VoiceService") as svc_cls:
+        svc_cls.return_value.list_versions.return_value = [granted]
+        r = client.get("/api/v1/voice-versions")
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body) == 1
+    assert body[0]["granted"] is True

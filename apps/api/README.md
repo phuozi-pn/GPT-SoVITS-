@@ -91,6 +91,11 @@ Dev 种子用户手机：`13800000001` · user_id `00000000-0000-0000-0000-00000
 | `QUOTA_MONTHLY_TRAIN_LIMIT` | `1` | 月训练次数上限 |
 | `ENGINE_TRAIN_ROOT` | 空 | 上游 GPT-SoVITS 路径 |
 | `ENGINE_TRAIN_DOCKER` | 空 | 非空则 `docker exec` 训练 |
+| `ALERT_WEBHOOK_URL` | 空 | Job 失败飞书/通用 Webhook |
+| `LOG_JSON` | `false` | 结构化 JSON 日志 |
+| `PLATFORM_RELEASE_VERSION` | `dev` | `/health` 返回的 release 标签 |
+
+W4 运维详见 [W4 Hardening](../../docs/architecture/2026-06-10-w4-hardening-可观测与回滚.md)。
 
 ## 真引擎合成（9880）
 

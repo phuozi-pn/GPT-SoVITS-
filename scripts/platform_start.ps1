@@ -14,7 +14,7 @@ $PidFile = Join-Path $RuntimeDir "platform.json"
 $LogDir = Join-Path $RuntimeDir "logs"
 
 if (-not (Test-Path $Python)) {
-    Write-Error "Missing venv: $Python — run: python -m venv .venv; pip install -e ."
+    Write-Error "Missing venv: $Python - run: python -m venv .venv; pip install -e ."
 }
 
 function Import-DotEnv {
@@ -36,6 +36,26 @@ function Get-ApiPortFromEnv {
         return [int]$Matches[1]
     }
     return 8001
+}
+
+function Get-PlatformReleaseVersion {
+    $manifestPath = Join-Path $RuntimeDir "releases.json"
+    if (Test-Path $manifestPath) {
+        try {
+            $manifest = Get-Content $manifestPath -Raw | ConvertFrom-Json
+            if ($manifest.releases -and $manifest.releases.Count -gt 0) {
+                return [string]$manifest.releases[0].tag
+            }
+        } catch { }
+    }
+    try {
+        Push-Location $RepoRoot
+        $sha = (git rev-parse --short HEAD 2>$null)
+        if ($sha) { return "dev-$sha" }
+    } catch { } finally {
+        Pop-Location
+    }
+    return "dev"
 }
 
 function Stop-ExistingPlatform {
@@ -78,6 +98,8 @@ if ($Background) {
 }
 
 $env:API_BASE = "http://127.0.0.1:$Port"
+$env:PLATFORM_RELEASE_VERSION = Get-PlatformReleaseVersion
+Write-Host "Release  $($env:PLATFORM_RELEASE_VERSION)"
 
 function Start-PlatformProcess {
     param(
@@ -138,6 +160,10 @@ $batchPid = Start-PlatformProcess -Name "batch" -Title "GPT Batch Worker" -Pytho
 } | ConvertTo-Json | Set-Content $PidFile -Encoding UTF8
 
 if (-not $NoEngineApi) {
+    $syncScript = Join-Path $RepoRoot "scripts\engine_sync_env.ps1"
+    if (Test-Path $syncScript) {
+        try { & $syncScript -Quiet | Out-Null } catch { }
+    }
     $engineScript = Join-Path $RepoRoot "scripts\engine_api_v2.ps1"
     if (Test-Path $engineScript) {
         try {
@@ -149,7 +175,8 @@ if (-not $NoEngineApi) {
                 & $engineScript -Action start | Out-Null
             }
         } catch {
-            Write-Host "Engine api_v2 skip (start engine container first?)"
+            Write-Host "Engine api_v2 skipped (engine Docker container not running)."
+            Write-Host "  Optional: start GPT-SoVITS container, then: .\scripts\engine_api_v2.ps1 -Action start"
         }
     }
 }

@@ -11,6 +11,8 @@ COPY domains ./domains
 COPY apps ./apps
 COPY workers ./workers
 COPY infra/docker/migrations ./infra/docker/migrations
+COPY infra/docker/alembic.ini ./infra/docker/alembic.ini
+COPY infra/docker/alembic ./infra/docker/alembic
 
 RUN pip install --no-cache-dir -e .
 

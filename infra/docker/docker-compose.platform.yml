@@ -1,0 +1,67 @@
+# Platform API + workers (tagged image for release/rollback)
+# Usage:
+#   copy release.env.example .env.release
+#   docker compose -f docker-compose.dev.yml -f docker-compose.platform.yml --env-file .env.release up -d
+
+services:
+  api:
+    image: ${PLATFORM_IMAGE:-voice-platform:latest}
+    container_name: gpt-platform-api
+    restart: unless-stopped
+    env_file:
+      - ../../.env
+    environment:
+      PLATFORM_RELEASE_VERSION: ${PLATFORM_IMAGE_TAG:-latest}
+    ports:
+      - "${API_PORT:-8001}:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: uvicorn apps.api.main:app --host 0.0.0.0 --port 8001
+
+  infer-worker:
+    image: ${PLATFORM_IMAGE:-voice-platform:latest}
+    container_name: gpt-platform-infer
+    restart: unless-stopped
+    env_file:
+      - ../../.env
+    environment:
+      PLATFORM_RELEASE_VERSION: ${PLATFORM_IMAGE_TAG:-latest}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: python -m workers.infer.runner
+
+  train-worker:
+    image: ${PLATFORM_IMAGE:-voice-platform:latest}
+    container_name: gpt-platform-train
+    restart: unless-stopped
+    env_file:
+      - ../../.env
+    environment:
+      PLATFORM_RELEASE_VERSION: ${PLATFORM_IMAGE_TAG:-latest}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: python -m workers.train.runner
+
+  batch-worker:
+    image: ${PLATFORM_IMAGE:-voice-platform:latest}
+    container_name: gpt-platform-batch
+    restart: unless-stopped
+    env_file:
+      - ../../.env
+    environment:
+      PLATFORM_RELEASE_VERSION: ${PLATFORM_IMAGE_TAG:-latest}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: python -m workers.batch.runner

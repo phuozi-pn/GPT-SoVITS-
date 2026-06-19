@@ -1,55 +1,107 @@
 # Voice Platform Web (MVP-0)
 
-Vue 3 + Vite 工作台，对接 `apps/api` REST API。
+Vue 3 + Vite + Tailwind 工作台，对接 `apps/api` REST API。
 
-## 开发（前后端分离）
-
-**终端 1 — 平台 API + Workers：**
+## 开发
 
 ```powershell
 cd C:\Users\panta\Desktop\GPT
-.\scripts\platform_start.ps1
+.\scripts\platform_start.ps1    # 终端 1：API + Workers
+.\scripts\web_dev.ps1           # 终端 2：http://127.0.0.1:5173
 ```
 
-**终端 2 — Web 开发服务器（代理 `/api` → 8001）：**
+登录：手机号验证码（`SMS_MOCK=true` 显示 mock_code）或开发模式跳过。
 
-```powershell
-.\scripts\web_dev.ps1
+## 工作流（先看这个）
+
+侧栏按 **三条主线** 分组，默认进入 **文本转语音**（`/library`）。
+
+```
+┌─ 制作 ─────────────────────────────────────────┐
+│  文本转语音 (/library)   日常单条/多段合成      │
+│  批量配音   (/projects)  CSV 多角色 + 合规 ZIP │
+└────────────────────────────────────────────────┘
+         ↑ 需要音色
+┌─ 音色 ─────────────────────────────────────────┐
+│  训练工作台 (/studio)    自有声纹：授权→训练     │
+│  音色馆     (/catalog)   他人公开音色：试听购买  │
+└────────────────────────────────────────────────┘
+┌─ 社区 ─────────────────────────────────────────┐
+│  动态 (/discover/feed)     时间线与发帖         │
+│  精选 (/discover/voices)   推荐音色             │
+│  指南 (/discover/guide)    新手上路             │
+│  消息 (/community)         私信洽谈             │
+└────────────────────────────────────────────────┘
 ```
 
-浏览器打开：**http://127.0.0.1:5173**
+**典型路径**
 
-- 登录页：手机号 + 验证码（`SMS_MOCK=true` 会显示 `mock_code`）
-- 或点击 **跳过登录**（需 API 侧 `DEV_SKIP_AUTH=true`）
+| 目标 | 路径 |
+|------|------|
+| 快速出一段配音 | 音色馆或文本转语音选音色 → `/library` 合成 |
+| 自己训练新音色 | `/studio` 四步 → 完成后在 `/library` 使用 |
+| 短剧批量生产 | `/library` 导入权重 → `/projects` 绑角色 → 上传 CSV |
+| 买他人音色 | `/catalog` 试听购买 → `/community` 私信卖家 |
+| 实名（训练前） | `/kyc`（从训练工作台引导） |
 
-## 生产构建（可选，由 API 同端口托管）
+导航与顶栏文案单一数据源：`src/config/navigation.ts`
+
+完整页面地图：[Web 工作流与页面地图](../../docs/architecture/2026-06-16-web-frontend-工作流与页面地图.md)
+
+## 全部路由
+
+| 路由 | 分组 | 说明 |
+|------|------|------|
+| `/library` | 制作 | 文本转语音制作台（**默认首页**） |
+| `/projects` | 制作 | 批量配音 |
+| `/studio` | 音色 | 训练工作台（四步向导） |
+| `/catalog` | 音色 | 音色馆 |
+| `/discover/feed` | 社区 | 动态时间线 |
+| `/discover/voices` | 社区 | 精选音色 |
+| `/discover/guide` | 社区 | 新手上路 |
+| `/discover` | — | 重定向至 `/discover/feed` |
+| `/community` | 社区 | 私信收件箱 |
+| `/kyc` | 音色 | 实名认证（二级页） |
+| `/creator/:id` | 社区 | 创作者主页 |
+| `/quality/:id` | 音色 | 相似度 AB 评测 |
+| `/verify/:id` | 音色 | 授权验真（外链） |
+| `/admin` | 运营 | 运营台（管理员） |
+| `/login` | — | 登录 |
+
+## 测试与构建
 
 ```powershell
 cd apps\web
-npm install
+npm test
 npm run build
 ```
 
-构建产物在 `apps/web/dist/`。重启 API 后访问 **http://127.0.0.1:8001/** 即可（需先 `npm run build`）。
+### E2E 金路径（Playwright + API）
 
-## 页面
+需本机 **PostgreSQL + Redis**（`infra/docker/docker-compose.dev.yml`），然后：
 
-| 路由 | 功能 |
-|------|------|
-| `/login` | 分栏登录页：品牌介绍 + 验证码登录 / 开发免登录 |
-| `/studio` | 四步向导：创建音色 → 上传 → 训练 → 合成（步骤条、配额、侧栏日志） |
+```powershell
+cd apps\web
+npx playwright install chromium
+npm run test:e2e
+```
 
-UI：Vue 3 原生 CSS（无组件库），深色顶栏 + 卡片式工作台，含合规提示与上传拖拽区样式。
+Playwright 会并行启动 E2E API（:8001，Windows 用 `scripts/e2e_start_api.py`，Linux/macOS 用 `.sh`）与 Vite（:5173）。种子音色 ID：`22222222-2222-2222-2222-222222222222`（见 `infra/docker/migrations/020_e2e_catalog_seed.sql`）。
 
-## 环境变量
+| 套件 | 文件 | 说明 |
+|------|------|------|
+| 展示站 + 购买合成 | `e2e/golden-paths.spec.ts` | 访客叙事、深链、买家 B 购买 |
+| 社区 + 验真 | `e2e/social-verify.spec.ts` | 发帖公开流、结账后验真 |
+
+联调购买用例以 **买家 B**（`aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa`）登录，避免自购种子音色（owner 为 user A）。`e2e/fixtures.ts` 提供 `loginDevMode` / `purchaseE2eVoice`（默认每次用 `ephemeralBuyerId()` 新用户，避免重复购买跳过结账）。
+
+本地完整套件：**14 passed**（约 50s，需 `npx playwright install chromium`）。
+
+## 环境
 
 | 变量 | 说明 |
 |------|------|
-| `VITE_API_BASE` | 可选；默认同源或 Vite 代理 |
-| API `WEB_CORS_ORIGINS` | 默认含 `http://127.0.0.1:5173` |
+| `VITE_API_BASE` | 可选 API 基址 |
+| API `WEB_CORS_ORIGINS` | 含 `http://127.0.0.1:5173` |
 
-## 与后端对齐
-
-- 端口以 `.env` 中 `STORAGE_PUBLIC_BASE_URL` 为准（默认 **8001**）
-- 短 wav 测试：`.env` 设 `QC_DEV_RELAX_DURATION=true`
-- Mock 训练/合成：`.env` 设 `TRAIN_MOCK=true` / `ENGINE_MOCK=true`
+样式：`src/styles/tailwind.css` · 制作核心：`components/make/MakeWorkspace.vue`

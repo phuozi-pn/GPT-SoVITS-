@@ -1,15 +1,20 @@
 from __future__ import annotations
 
 import logging
+from uuid import UUID
 
-from voice_platform.auth.jwt import create_access_token
+from voice_platform.auth.jwt import TokenError, create_access_token, decode_access_token
 from voice_platform.auth.otp import OtpStore
 from voice_platform.auth.repository import UserRepository
 from voice_platform.auth.schemas import LoginResponse, SmsSendResponse, UserInfo
 from voice_platform.config import get_settings
 from voice_platform.quota.repository import QuotaRepository
+from voice_platform.social.system import ensure_system_user
 
 logger = logging.getLogger(__name__)
+
+SYSTEM_USER_ID = UUID("00000000-0000-0000-0000-000000000000")
+VIEWER_ANONYMOUS = UUID("00000000-0000-0000-0000-000000000000")
 
 
 class AuthError(Exception):
@@ -26,6 +31,31 @@ class AuthService:
         self._users = UserRepository(session)
         self._otp = otp_store or OtpStore()
         self._settings = get_settings()
+
+    # ---- JWT / token ----
+
+    @staticmethod
+    def decode_token(token: str) -> UUID:
+        """Decode a JWT access token and return the user ID.
+
+        Raises AuthError on invalid/expired tokens.
+        """
+        try:
+            return decode_access_token(token)
+        except TokenError as exc:
+            raise AuthError("AUTH_REQUIRED", str(exc), 401) from exc
+
+    # ---- User management helpers ----
+
+    def ensure_dev_user(self, user_id: UUID) -> None:
+        """Create or verify a dev-mode user."""
+        self._users.ensure_dev_user(user_id)
+
+    def ensure_system_user(self) -> None:
+        """Ensure the system user exists for system notices."""
+        ensure_system_user(self._session)
+
+    # ---- SMS / login ----
 
     def send_sms(self, phone: str) -> SmsSendResponse:
         if self._otp.is_locked(phone):
@@ -66,6 +96,6 @@ class AuthService:
         return LoginResponse(
             access_token=token,
             expires_in_days=self._settings.jwt_expire_days,
-            user=UserInfo(user_id=user.id, phone=user.phone),
+            user=UserInfo(user_id=user.id, phone=user.phone, verified=user.verified),
             quota=quota,
         )

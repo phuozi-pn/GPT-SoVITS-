@@ -5,10 +5,13 @@ from uuid import UUID
 import pytest
 
 from domains.compliance.gateway import ComplianceError, ComplianceGateway
+from voice_platform.job.schemas import InferSegment
 
 GATEWAY = ComplianceGateway()
 USER = UUID("00000000-0000-0000-0000-000000000001")
 VOICE = UUID("11111111-1111-1111-1111-111111111101")
+VOICE_B = UUID("22222222-2222-2222-2222-222222222202")
+VOICE_PROFILE = UUID("11111111-1111-1111-1111-111111111100")
 
 
 def test_synthesis_ok():
@@ -68,7 +71,28 @@ def test_ai_disclosure_required():
     assert exc.value.code == "AI_DISCLOSURE_REQUIRED"
 
 
-VOICE_PROFILE = UUID("11111111-1111-1111-1111-111111111100")
+def test_synthesis_segments_ok():
+    payload = GATEWAY.validate_synthesis(
+        user_id=USER,
+        segments=[
+            InferSegment(voice_version_id=VOICE, text="甲"),
+            InferSegment(voice_version_id=VOICE_B, text="乙"),
+        ],
+        voice_access_checker=lambda vid: True,
+    )
+    assert payload.segments is not None
+    assert len(payload.segments) == 2
+    assert payload.billed_char_count() == 2
+
+
+def test_synthesis_segment_voice_denied():
+    with pytest.raises(ComplianceError) as exc:
+        GATEWAY.validate_synthesis(
+            user_id=USER,
+            segments=[InferSegment(voice_version_id=VOICE, text="你好")],
+            voice_access_checker=lambda vid: False,
+        )
+    assert exc.value.code == "VOICE_NOT_GRANTED"
 
 
 def test_train_ok():

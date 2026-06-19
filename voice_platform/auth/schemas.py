@@ -46,6 +46,7 @@ class LoginRequest(BaseModel):
 class UserInfo(BaseModel):
     user_id: UUID
     phone: str
+    verified: bool = False
 
 
 class LoginResponse(BaseModel):

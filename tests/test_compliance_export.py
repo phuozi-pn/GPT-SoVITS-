@@ -96,14 +96,15 @@ def _synth_record(*, export_compliant: bool, audio_url: str) -> JobRecord:
 
 
 def test_export_download_requires_compliant_job(client):
-    record = _synth_record(
-        export_compliant=False,
-        audio_url="http://127.0.0.1:8001/files/u/synthesis/x.wav",
-    )
-    with patch("apps.api.routes.exports.get_job_for_user", return_value=record):
+    from domains.jobs.service import JobExportError
+
+    with patch(
+        "domains.jobs.service.JobService.resolve_export_download",
+        side_effect=JobExportError("LABEL_REQUIRED", "Export is not compliance-labeled", 403),
+    ):
         r = client.get(f"/api/v1/exports/{JOB}/download")
     assert r.status_code == 403
-    assert r.json()["detail"]["code"] == "LABEL_REQUIRED"
+    assert r.json()["code"] == "LABEL_REQUIRED"
 
 
 def test_export_download_synthesis_ok(client, tmp_path, monkeypatch):
@@ -119,11 +120,10 @@ def test_export_download_synthesis_ok(client, tmp_path, monkeypatch):
 
     get_settings.cache_clear()
 
-    record = _synth_record(
-        export_compliant=True,
-        audio_url=f"http://127.0.0.1:8001/files/{rel}",
-    )
-    with patch("apps.api.routes.exports.get_job_for_user", return_value=record):
+    with patch(
+        "domains.jobs.service.JobService.resolve_export_download",
+        return_value=(str(wav_path), f"synthesis_{JOB}.wav", "audio/wav"),
+    ):
         r = client.get(f"/api/v1/exports/{JOB}/download")
     assert r.status_code == 200
     assert r.headers.get("X-AI-Generated") == "true"

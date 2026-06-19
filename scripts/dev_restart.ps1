@@ -38,6 +38,10 @@ Start-Sleep -Seconds 2
 
 Write-Host ""
 Write-Host "========== 4/4 Start platform =========="
+$syncScript = Join-Path $PSScriptRoot "engine_sync_env.ps1"
+if (Test-Path $syncScript) {
+    try { & $syncScript -Quiet | Out-Null } catch { }
+}
 $startParams = @{}
 if ($Background) { $startParams.Background = $true }
 if ($SkipEngine) { $startParams.NoEngineApi = $true }
@@ -61,7 +65,7 @@ while ((Get-Date) -lt $deadline) {
 if ($apiOk) {
     Write-Host "  API health OK -> http://127.0.0.1:$port/health"
 } else {
-    Write-Host "  API not ready — try: Get-Content .runtime\logs\api.err.log -Tail 30"
+    Write-Host "  API not ready - try: Get-Content .runtime\logs\api.err.log -Tail 30"
     Write-Host "  Or: .\.venv\Scripts\python.exe -m uvicorn apps.api.main:app --host 127.0.0.1 --port $port"
 }
 

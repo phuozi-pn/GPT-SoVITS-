@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from uuid import UUID
 
 from domains.compliance.wordlist import find_sensitive_word
 from voice_platform.config import get_settings
-from voice_platform.job.schemas import InferPayload
+from voice_platform.job.schemas import InferPayload, InferSegment, SynthesisRequest
 
 
 class ComplianceError(Exception):
@@ -28,28 +29,114 @@ class ComplianceGateway:
         self,
         *,
         user_id: UUID,
-        voice_version_id: UUID,
-        text: str,
-        has_voice_access: bool,
+        voice_version_id: UUID | None = None,
+        text: str | None = None,
+        has_voice_access: bool = False,
         ai_disclosure_ack: bool = True,
+        temperature: float | None = None,
+        speed_factor: float | None = None,
+        top_p: float | None = None,
+        emotion: str | None = None,
+        emotion_strength: float = 0.5,
+        segments: list[InferSegment] | None = None,
+        voice_access_checker: Callable[[UUID], bool] | None = None,
+        project_type: str | None = None,
     ) -> InferPayload:
         if not ai_disclosure_ack:
             raise ComplianceError("AI_DISCLOSURE_REQUIRED", "AI disclosure required", 403)
+
+        if segments:
+            cleaned_segments: list[InferSegment] = []
+            for seg in segments:
+                if voice_access_checker and not voice_access_checker(seg.voice_version_id):
+                    raise ComplianceError("VOICE_NOT_GRANTED", "Voice version not accessible", 403)
+                cleaned = self._validate_text(seg.text, max_len=2000)
+                cleaned_segments.append(
+                    InferSegment(
+                        voice_version_id=seg.voice_version_id,
+                        text=cleaned,
+                        speed_factor=seg.speed_factor,
+                        temperature=seg.temperature,
+                        top_p=seg.top_p,
+                        pitch_factor=seg.pitch_factor,
+                        emotion=seg.emotion,
+                        emotion_strength=seg.emotion_strength,
+                        pause_duration=seg.pause_duration,
+                    )
+                )
+            return InferPayload(
+                segments=cleaned_segments,
+                temperature=temperature,
+                speed_factor=speed_factor,
+                top_p=top_p,
+                emotion=emotion,
+                emotion_strength=emotion_strength,
+                project_type=project_type,
+            )
+
         if not has_voice_access:
             raise ComplianceError("VOICE_NOT_GRANTED", "Voice version not accessible", 403)
-        cleaned = self._validate_text(text)
-        return InferPayload(voice_version_id=voice_version_id, text=cleaned)
+        cleaned = self._validate_text(text or "")
+        return InferPayload(
+            voice_version_id=voice_version_id,
+            text=cleaned,
+            temperature=temperature,
+            speed_factor=speed_factor,
+            top_p=top_p,
+            emotion=emotion,
+            emotion_strength=emotion_strength,
+            project_type=project_type,
+        )
+
+    def validate_synthesis_request(
+        self,
+        *,
+        user_id: UUID,
+        body: SynthesisRequest,
+        voice_access_checker: Callable[[UUID], bool],
+    ) -> InferPayload:
+        segments = None
+        if body.segments:
+            segments = [
+                InferSegment(
+                    voice_version_id=s.voice_version_id,
+                    text=s.text,
+                    speed_factor=s.speed_factor,
+                    temperature=s.temperature,
+                    top_p=s.top_p,
+                    pitch_factor=s.pitch_factor,
+                    emotion=s.emotion,
+                    emotion_strength=s.emotion_strength,
+                    pause_duration=s.pause_duration,
+                )
+                for s in body.segments
+            ]
+        return self.validate_synthesis(
+            user_id=user_id,
+            voice_version_id=body.voice_version_id,
+            text=body.text,
+            has_voice_access=bool(body.voice_version_id and voice_access_checker(body.voice_version_id)),
+            ai_disclosure_ack=body.ai_disclosure_ack,
+            temperature=body.temperature,
+            speed_factor=body.speed_factor,
+            top_p=body.top_p,
+            emotion=body.emotion,
+            emotion_strength=body.emotion_strength,
+            segments=segments,
+            voice_access_checker=voice_access_checker,
+            project_type=body.project_type,
+        )
 
     def validate_batch_line_text(self, text: str) -> str:
         """Basic + sensitive check for a single CSV line (batch worker)."""
         return self._validate_text(text)
 
-    def _validate_text(self, text: str) -> str:
+    def _validate_text(self, text: str, *, max_len: int = 5000) -> str:
         cleaned = text.strip()
         if not cleaned or _PUNCT_ONLY.match(cleaned):
             raise ComplianceError("INVALID_TEXT", "Text is empty or punctuation only", 400)
-        if len(cleaned) > 5000:
-            raise ComplianceError("TEXT_TOO_LONG", "Text exceeds 5000 characters", 400)
+        if len(cleaned) > max_len:
+            raise ComplianceError("TEXT_TOO_LONG", f"Text exceeds {max_len} characters", 400)
         hit = find_sensitive_word(cleaned, path=self._wordlist_path)
         if hit:
             raise ComplianceError("SENSITIVE_WORD", f"Sensitive word blocked: {hit}", 400)

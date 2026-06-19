@@ -1,0 +1,1 @@
+"""Voice quality evaluation domain."""

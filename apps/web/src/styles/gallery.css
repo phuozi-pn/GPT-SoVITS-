@@ -1,0 +1,193 @@
+/* 卷三 · 社区画廊 */
+@layer components {
+  .gallery-hall {
+    position: relative;
+    padding: 0;
+    max-width: none;
+    margin: 0;
+    background: transparent;
+  }
+
+  .gallery-hall__intro {
+    margin-bottom: 40px;
+    padding-bottom: 32px;
+    border-bottom: 1px solid var(--color-line);
+    max-width: 40em;
+  }
+
+  .gallery-hall__title {
+    margin: 0 0 10px;
+    font-family: var(--font-scroll);
+    font-size: clamp(1.25rem, 2.2vw, 1.5rem);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: var(--color-ink);
+  }
+
+  .gallery-hall__lead {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.75;
+    color: var(--color-ink-muted);
+  }
+
+  .feed-stream--gallery {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 24px;
+    align-items: stretch;
+  }
+
+  .feed-stream--gallery .feed-card--stream {
+    margin: 0;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .feed-stream--gallery .feed-stream__more {
+    grid-column: 1 / -1;
+  }
+
+  .gallery-scroll {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    height: 100%;
+    padding: 24px;
+    border: 1px solid var(--color-line);
+    background: var(--color-surface);
+    cursor: pointer;
+    transition:
+      border-color var(--duration-normal) var(--ease-out),
+      box-shadow var(--duration-normal) var(--ease-out);
+  }
+
+  .feed-card--gallery:hover .gallery-scroll,
+  .feed-card--hover .gallery-scroll {
+    border-color: var(--color-line-strong);
+    box-shadow: var(--shadow-soft);
+  }
+
+  .gallery-scroll__head {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+  }
+
+  .gallery-scroll__meta {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .gallery-scroll__seal {
+    flex-shrink: 0;
+    transition: box-shadow var(--duration-normal) var(--ease-out);
+  }
+
+  .gallery-scroll__seal--marked {
+    box-shadow: 0 0 0 1px var(--color-cinnabar-soft);
+  }
+
+  .gallery-scroll__title {
+    margin: 0 0 6px;
+    font-family: var(--font-scroll);
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.45;
+    letter-spacing: 0.02em;
+    color: var(--color-ink);
+  }
+
+  .gallery-scroll__time {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--color-ink-faint);
+  }
+
+  .gallery-scroll__scroll-bar {
+    flex-shrink: 0;
+    align-self: flex-start;
+    width: 4px;
+    height: 48px;
+    background: var(--color-line);
+  }
+
+  .gallery-scroll__foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: auto;
+    padding-top: 16px;
+    border-top: 1px solid var(--color-line);
+  }
+
+  .gallery-imprint {
+    padding: 0;
+    border: none;
+    background: transparent;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--color-ink-muted);
+    cursor: pointer;
+  }
+
+  .gallery-imprint--on {
+    color: var(--color-cinnabar);
+  }
+
+  .gallery-scroll__price {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--color-ink-faint);
+  }
+
+  .gallery-void-end {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 40px 0 16px;
+    text-align: center;
+  }
+
+  .gallery-epilogue {
+    margin-top: 48px;
+    padding-top: 32px;
+    border-top: 1px solid var(--color-line);
+    text-align: center;
+  }
+
+  .gallery-epilogue--void {
+    border-top: 1px solid var(--color-line);
+    padding-top: 40px;
+  }
+
+  .gallery-roll-up {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 16px;
+    padding: 8px 14px;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-ui);
+    background: var(--color-surface);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--color-ink-muted);
+    cursor: pointer;
+  }
+
+  .gallery-roll-up:hover {
+    border-color: var(--color-line-strong);
+    color: var(--color-ink);
+  }
+
+  @media (max-width: 900px) {
+    .feed-stream--gallery {
+      grid-template-columns: 1fr;
+    }
+  }
+}

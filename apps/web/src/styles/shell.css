@@ -1,0 +1,293 @@
+/* 应用壳层 · 布局与通用组件（逻辑优先，轻量样式） */
+@layer components {
+  /* 确保 AppLayout slot 内的路由视图内容撑满 */
+  .app-shell__slot-frame {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+  }
+  .app-shell__slot-frame > * {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+  }
+
+  .btn-formal {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 36px;
+    padding: 0 16px;
+    border: 1px solid var(--color-line-strong);
+    border-radius: var(--radius-ui);
+    background: var(--color-surface);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--color-ink);
+    text-decoration: none;
+    cursor: pointer;
+  }
+
+  .btn-formal--primary {
+    border-color: var(--color-ink);
+    background: var(--color-ink);
+    color: #fff;
+  }
+
+  .social-page {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    /* 确保在 PageSurface 内始终填满可用宽度 */
+    width: 100%;
+  }
+
+  .social-page__head {
+    margin-bottom: 20px;
+  }
+
+  .social-page__title {
+    margin: 0 0 6px;
+    font-size: 18px;
+    font-weight: 600;
+  }
+
+  .social-page__lead {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.65;
+    color: var(--color-ink-muted);
+  }
+
+  .social-page__layout {
+    display: grid;
+    gap: 20px;
+    max-width: 860px;
+  }
+
+  @media (min-width: 900px) {
+    .social-page__layout {
+      grid-template-columns: 200px minmax(0, 1fr);
+      gap: 24px;
+      align-items: start;
+      max-width: 900px;
+    }
+  }
+
+  /* 无侧边栏的发现页 —— 单列居中，内容可滚动 */
+  .social-page__layout--single {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    max-width: 860px;
+    margin: 0 auto;
+    padding-right: 4px; /* 给滚动条留空间 */
+  }
+
+  @media (min-width: 900px) {
+    .social-page__layout--single {
+      grid-template-columns: minmax(0, 1fr);
+      max-width: 860px;
+    }
+  }
+
+  .social-page__aside {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  @media (min-width: 900px) {
+    .social-page__aside {
+      position: sticky;
+      top: 72px;
+    }
+  }
+
+  .social-stat {
+    padding: 12px 14px;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-ui);
+    background: var(--color-surface);
+  }
+
+  .social-stat__label {
+    margin: 0 0 4px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-ink-faint);
+  }
+
+  .social-stat__value {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .social-toolbar {
+    margin: 16px 0;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--color-line);
+  }
+
+  .feed-stream--gallery {
+    display: grid;
+    gap: 16px;
+  }
+
+  @media (min-width: 720px) {
+    .feed-stream--gallery {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  .feed-stream--gallery .feed-card--stream {
+    margin: 0;
+    padding: 0;
+    border: none;
+    background: transparent;
+  }
+
+  .gallery-scroll {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    height: 100%;
+    padding: 18px;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-ui);
+    background: var(--color-surface);
+    cursor: pointer;
+  }
+
+  .gallery-scroll__head {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+  }
+
+  .gallery-scroll__meta {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .gallery-scroll__title {
+    margin: 0 0 4px;
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .gallery-scroll__time {
+    font-size: 11px;
+    color: var(--color-ink-faint);
+  }
+
+  .gallery-scroll__foot {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: auto;
+    padding-top: 12px;
+    border-top: 1px solid var(--color-line);
+  }
+
+  .zone-panel {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    height: 100%;
+  }
+
+  .zone-panel__head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border-subtle);
+    background: var(--bg-surface);
+    flex-shrink: 0;
+  }
+
+  .zone-panel__step {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--color-cinnabar);
+  }
+
+  .zone-panel__title {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .zone-panel__hint {
+    margin: 0;
+    font-size: 11px;
+    color: var(--color-ink-faint);
+  }
+
+  .zone-panel__body {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+  }
+
+  .flow-pipeline {
+    display: grid;
+    gap: 8px;
+  }
+
+  @media (min-width: 720px) {
+    .flow-pipeline {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 0;
+    }
+
+    .flow-pipeline__step {
+      border-radius: 0;
+      border-right: none;
+    }
+
+    .flow-pipeline__step:first-child {
+      border-radius: var(--radius-ui) 0 0 var(--radius-ui);
+    }
+
+    .flow-pipeline__step:last-child {
+      border-right: 1px solid var(--color-line);
+      border-radius: 0 var(--radius-ui) var(--radius-ui) 0;
+    }
+  }
+
+  .flow-pipeline__step {
+    padding: 12px 14px;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-ui);
+    background: var(--color-surface);
+    list-style: none;
+  }
+
+  .flow-pipeline__step--active {
+    border-color: var(--color-line-strong);
+    box-shadow: var(--shadow-soft);
+  }
+
+  .flow-pipeline__label {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .flow-pipeline__desc {
+    margin: 4px 0 0;
+    font-size: 11px;
+    color: var(--color-ink-muted);
+  }
+}

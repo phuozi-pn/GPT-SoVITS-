@@ -28,12 +28,17 @@ if (Test-Path $PidFile) {
         Write-Host ("  {0,-6} PID {1,-8} {2}" -f $name, $pidStr, $state)
     }
 } else {
-    Write-Host "  (not started — run platform_start.ps1)"
+    Write-Host "  (not started - run platform_start.ps1)"
 }
 
 try {
     $r = Invoke-WebRequest "http://127.0.0.1:$port/health" -TimeoutSec 3 -UseBasicParsing
-    Write-Host "  API    http://127.0.0.1:$port/health -> $($r.StatusCode)"
+    $release = ""
+    try {
+        $health = $r.Content | ConvertFrom-Json
+        if ($health.release) { $release = " release=$($health.release)" }
+    } catch { }
+    Write-Host "  API    http://127.0.0.1:$port/health -> $($r.StatusCode)$release"
 } catch {
     Write-Host "  API    http://127.0.0.1:$port/health -> down"
 }

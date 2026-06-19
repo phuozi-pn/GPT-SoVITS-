@@ -32,7 +32,7 @@ def test_upload_rejects_without_consent(client):
             files={"audio_file": ("a.wav", b"RIFF", "audio/wav")},
         )
     assert r.status_code == 403
-    assert r.json()["detail"]["code"] == "CONSENT_REQUIRED"
+    assert r.json()["code"] == "CONSENT_REQUIRED"
 
 
 def test_upload_returns_qc_report(client):
@@ -70,7 +70,7 @@ def test_confirm_rejects_qc_not_passed(client):
         )
         r = client.post("/api/v1/voices/assets/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/confirm")
     assert r.status_code == 422
-    assert r.json()["detail"]["code"] == "QC_NOT_PASSED"
+    assert r.json()["code"] == "QC_NOT_PASSED"
 
 
 def test_create_voice(client):

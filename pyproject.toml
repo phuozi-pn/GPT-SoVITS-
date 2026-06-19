@@ -1,10 +1,11 @@
 [project]
 name = "voice-platform"
 version = "0.1.0"
-description = "GPT-SoVITS voice platform MVP-0"
+description = "Phonia — AI voice cloning platform (GPT-SoVITS)"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "alembic>=1.14.0",
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
     "sqlalchemy>=2.0.36",
@@ -14,12 +15,19 @@ dependencies = [
     "httpx>=0.28.0",
     "python-multipart>=0.0.12",
     "PyJWT>=2.9.0",
+    "swagger-ui-bundle>=1.1.0",
+    "fpdf2>=2.8.0",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.3.0",
     "ruff>=0.8.0",
+    "import-linter>=2.2",
+    "numpy>=1.26.0",
+]
+quality = [
+    "numpy>=1.26.0",
 ]
 
 [build-system]
@@ -33,3 +41,61 @@ include = ["voice_platform*", "domains*", "apps*", "workers*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+
+# ── Import Linter 架构约束 ─────────────────────────────
+# 执行: pip install import-linter && lint-imports
+# 详见: https://import-linter.readthedocs.io/
+
+[tool.importlinter]
+root_package = ""
+include_external_packages = false
+
+[[tool.importlinter.contracts]]
+name = "分层架构 — 依赖方向"
+type = "layers"
+layers = [
+    "voice_platform",   # 基础设施层（DB、队列、存储、配置）
+    "domains",          # 领域逻辑层（业务服务、用例编排）
+    "workers",          # Worker 层（异步任务执行）
+    "apps",             # API 接口层（FastAPI 路由、中间件）
+]
+# 层间依赖方向（高到低）：
+#   apps → domains → voice_platform
+#   workers → domains → voice_platform
+containers = [
+    "voice_platform",
+    "domains",
+    "workers",
+    "apps",
+]
+
+[[tool.importlinter.contracts]]
+name = "Domains 层独立性"
+type = "independence"
+modules = [
+    "domains",
+]
+# domains/ 不得依赖 apps/ 或 workers/
+# 仅允许依赖 voice_platform/ 基础设施
+ignore_imports = []
+
+[[tool.importlinter.contracts]]
+name = "Voice Platform 基础设施独立性"
+type = "independence"
+modules = [
+    "voice_platform",
+]
+# voice_platform/ 不得依赖 apps/、workers/、domains/
+ignore_imports = []
+
+[[tool.importlinter.contracts]]
+name = "禁止循环依赖"
+type = "forbidden"
+source_modules = [
+    "voice_platform",
+    "domains",
+    "workers",
+    "apps",
+]
+forbidden_modules = []
+# 此合约由 import-linter 内置循环检测保证

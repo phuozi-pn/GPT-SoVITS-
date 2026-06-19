@@ -11,7 +11,13 @@
 
 ```powershell
 cd C:\Users\panta\Desktop\GPT
+# 真引擎（.env ENGINE_MOCK=false）须先：
+#   .\scripts\engine_sync_env.ps1
+#   .\scripts\engine_api_v2.ps1 -Action start
+# 或占位：.env ENGINE_MOCK=true 后 platform_start.ps1
+python scripts/engine_preflight.py
 .\.venv\Scripts\python.exe scripts\smoke_e2e_guzhenren.py
+python scripts/smoke_e2e_batch_mixed.py   # 敏感词行级失败
 ```
 
 可选环境变量见 `smoke_e2e_guzhenren.py` 文件头。

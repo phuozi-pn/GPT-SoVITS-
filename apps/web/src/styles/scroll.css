@@ -1,0 +1,186 @@
+/* 三卷画卷 · 典藏级视觉语汇 */
+@layer components {
+  .scroll-xuan {
+    background-color: var(--bg-primary);
+    background-image: linear-gradient(180deg, var(--bg-surface) 0%, var(--bg-primary) 100%);
+  }
+
+  .scroll-xuan--grain::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.25;
+    background: radial-gradient(120% 80% at 50% 100%, rgb(255 255 255 / 0.02), transparent 62%);
+  }
+
+  .scroll-poem {
+    margin: 0;
+    font-family: var(--font-scroll);
+    font-size: clamp(1.5rem, 3.2vw, 2.125rem);
+    font-weight: 500;
+    line-height: 1.65;
+    letter-spacing: 0.14em;
+    text-indent: 0.14em;
+    color: var(--color-ink);
+    animation: scroll-poem-in 1.4s var(--ease-out) both;
+  }
+
+  @keyframes scroll-poem-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .scroll-eyebrow {
+    margin: 0 0 12px;
+    font-family: var(--font-body);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--color-ink-faint);
+  }
+
+  .scroll-epigraph {
+    margin: 0;
+    font-family: var(--font-body);
+    font-size: 13px;
+    line-height: 1.75;
+    letter-spacing: 0.04em;
+    color: var(--color-ink-muted);
+  }
+
+  .scroll-ink-frame {
+    padding: clamp(24px, 3vw, 40px);
+    border: 1px solid var(--color-line-strong);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-soft);
+  }
+
+  .scroll-seal {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 2em;
+    min-height: 2em;
+    padding: 0.1em 0.3em;
+    border: 1px solid var(--color-cinnabar);
+    color: var(--color-cinnabar);
+    font-family: var(--font-scroll);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    background: var(--color-cinnabar-soft);
+    transform: none;
+  }
+
+  .scroll-sunset-sweep {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .scroll-sunset-sweep::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      105deg,
+      transparent 0%,
+      transparent 44%,
+      var(--theme-warm-glow) 50%,
+      transparent 56%,
+      transparent 100%
+    );
+    transform: translateX(-120%);
+    pointer-events: none;
+    opacity: 0;
+  }
+
+  .scroll-sunset-sweep--play::after {
+    animation: scroll-sunset-pass 2.8s var(--ease-out) forwards;
+  }
+
+  @keyframes scroll-sunset-pass {
+    0% {
+      opacity: 0;
+      transform: translateX(-120%);
+    }
+    15% {
+      opacity: 1;
+    }
+    85% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+      transform: translateX(120%);
+    }
+  }
+
+  .scroll-unfurl {
+    animation: scroll-unfurl 0.9s var(--ease-out) both;
+  }
+
+  @keyframes scroll-unfurl {
+    from {
+      opacity: 0;
+      transform: translateY(16px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .scroll-unfurl--delay-1 {
+    animation-delay: 0.1s;
+  }
+
+  .scroll-unfurl--delay-2 {
+    animation-delay: 0.2s;
+  }
+
+  .btn-formal {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    padding: 0 24px;
+    border: 1px solid var(--color-line-strong);
+    border-radius: var(--radius-ui);
+    background: var(--color-surface);
+    font-family: var(--font-body);
+    font-size: 14px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    color: var(--color-ink);
+    cursor: pointer;
+    text-decoration: none;
+    transition:
+      border-color var(--duration-normal) var(--ease-out),
+      background var(--duration-normal) var(--ease-out);
+  }
+
+  .btn-formal:hover {
+    border-color: var(--color-pine-ink);
+    background: var(--bg-surface);
+  }
+
+  .btn-formal--primary {
+    border-color: var(--theme-warm);
+    background: var(--theme-warm);
+    color: #0A0B0D;
+  }
+
+  .btn-formal--primary:hover {
+    border-color: var(--color-highlight);
+    background: var(--color-highlight);
+    color: #0A0B0D;
+  }
+}

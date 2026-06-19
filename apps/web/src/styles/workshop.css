@@ -1,0 +1,96 @@
+/* 卷二 · 声音制作工作台 */
+@layer components {
+  .app-shell--workshop {
+    background: var(--bg-primary);
+  }
+
+  .app-shell--workshop .app-shell__sidebar {
+    width: 240px;
+    background: var(--bg-secondary);
+    border-right: 1px solid var(--border-glow);
+  }
+
+  .app-shell--workshop .app-shell__brand strong {
+    font-family: var(--font-scroll);
+    font-weight: 600;
+    font-size: 14px;
+    letter-spacing: 0.04em;
+  }
+
+  .app-shell--workshop .app-shell__brand span {
+    font-size: 11px;
+    letter-spacing: 0.02em;
+    color: var(--color-ink-faint);
+  }
+
+  .app-shell--workshop .app-shell__nav-group-label {
+    font-family: var(--font-body);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-ink-faint);
+  }
+
+  .app-shell--workshop .app-shell__nav-item--on {
+    background: var(--bg-surface);
+    border-left-color: var(--theme-warm);
+    box-shadow: none;
+  }
+
+  .app-shell--workshop .app-shell__content {
+    background: var(--bg-primary);
+  }
+
+  .workshop-script-area {
+    background: var(--bg-surface);
+  }
+
+  .seg-block--scroll {
+    margin-bottom: 20px;
+    padding: 20px;
+    border: 1px solid var(--border-glow);
+    border-radius: var(--radius-ui);
+    background: var(--bg-surface);
+    transition: border-color var(--duration-normal) var(--ease-out);
+  }
+
+  .seg-block--scroll:hover {
+    border-color: var(--border-strong);
+  }
+
+  .seg-block--scroll .seg-block__seal-wrap {
+    position: static;
+    flex-shrink: 0;
+  }
+
+  .seg-block--scroll .seg-block__head {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .seg-block--scroll .seg-block__area {
+    font-family: var(--font-body);
+    font-size: 14px;
+    line-height: 1.85;
+    letter-spacing: normal;
+    border: none;
+    background: transparent;
+    min-height: 88px;
+  }
+
+  .seg-block--scroll .seg-block__tune {
+    border-top: 1px solid var(--border-subtle);
+    opacity: 1;
+  }
+
+  .seg-block--scroll .seg-block__voice {
+    border: none;
+    border-bottom: 1px solid var(--border-subtle);
+    border-radius: 0;
+    background: transparent;
+    font-size: 12px;
+    color: var(--color-ink-muted);
+  }
+}

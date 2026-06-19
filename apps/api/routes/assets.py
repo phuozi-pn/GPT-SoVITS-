@@ -2,29 +2,24 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from apps.api.deps import get_current_user_id
+from apps.api.deps import get_current_user_id, get_session
 from domains.assets.qc import AssetQcError
 from domains.assets.service import AssetService
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
-from voice_platform.config import get_db_session
 from voice_platform.job.schemas import AssetConfirmResponse, AssetQcResponse, AssetUploadResponse
 
 router = APIRouter()
 
 
-def get_session():
-    session = get_db_session()
-    try:
-        yield session
-    finally:
-        session.close()
-
-
 def _raise_asset_error(exc: AssetQcError) -> None:
-    status = 403 if exc.code in {"FORBIDDEN", "CONSENT_REQUIRED"} else 400
-    if exc.code.startswith("QC_"):
+    """Asset-specific error mapper with custom HTTP status rules."""
+    if exc.code in {"FORBIDDEN", "CONSENT_REQUIRED"}:
+        status = 403
+    elif exc.code.startswith("QC_"):
         status = 422
+    else:
+        status = 400
     raise HTTPException(status_code=status, detail={"code": exc.code, "message": exc.message}) from exc
 
 

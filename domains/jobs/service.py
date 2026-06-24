@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from uuid import UUID
 
+from domains.cloud_train.progress import read_cloud_train_progress
 from voice_platform.config import get_settings
 from voice_platform.job.repository import JobRepository
 from voice_platform.job.schemas import JobRecord, JobResponse, JobStatus, JobType
@@ -130,9 +131,43 @@ def record_to_response(record: JobRecord) -> JobResponse:
             resp.voice_version_id = UUID(vv) if vv else None
             resp.checkpoint_uri = record.result.get("checkpoint_uri")
             resp.model_tag = record.result.get("model_tag")
+            gpt_e = record.result.get("gpt_epochs")
+            sov_e = record.result.get("sovits_epochs")
+            elapsed = record.result.get("elapsed_sec")
+            segs = record.result.get("cloud_dataset_segments")
+            remote_work = record.result.get("cloud_remote_work_dir")
+            remote_dataset = record.result.get("cloud_remote_dataset_dir")
+            if gpt_e is not None:
+                resp.train_gpt_epochs = int(gpt_e)
+            if sov_e is not None:
+                resp.train_sovits_epochs = int(sov_e)
+            if elapsed is not None:
+                resp.train_elapsed_sec = float(elapsed)
+            if segs is not None:
+                resp.train_dataset_segments = int(segs)
+            if remote_work:
+                resp.train_remote_work_dir = str(remote_work)
+            if remote_dataset:
+                resp.train_remote_dataset_path = str(remote_dataset)
         elif record.job_type == JobType.BATCH:
             resp.line_count = record.result.get("line_count")
             resp.succeeded_count = record.result.get("succeeded_count")
             resp.failed_count = record.result.get("failed_count")
             resp.zip_url = record.result.get("zip_url")
+    if record.job_type == JobType.TRAIN and record.status in (JobStatus.RUNNING, JobStatus.QUEUED):
+        settings = get_settings()
+        prog = read_cloud_train_progress(storage_root=settings.storage_root, job_id=record.job_id)
+        if prog:
+            resp.train_progress_phase = str(prog.get("phase") or "") or None
+            resp.train_progress_message = str(prog.get("message") or "") or None
+            if prog.get("gpt_epochs") is not None and resp.train_gpt_epochs is None:
+                resp.train_gpt_epochs = int(prog["gpt_epochs"])
+            if prog.get("sovits_epochs") is not None and resp.train_sovits_epochs is None:
+                resp.train_sovits_epochs = int(prog["sovits_epochs"])
+            if prog.get("segment_count") is not None and resp.train_dataset_segments is None:
+                resp.train_dataset_segments = int(prog["segment_count"])
+            if prog.get("remote_work_dir") and not resp.train_remote_work_dir:
+                resp.train_remote_work_dir = str(prog["remote_work_dir"])
+            if prog.get("remote_dataset_dir") and not resp.train_remote_dataset_path:
+                resp.train_remote_dataset_path = str(prog["remote_dataset_dir"])
     return resp

@@ -1,16 +1,17 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import type { VoicePickerItem } from "@/components/VoicePicker.vue";
 import { parseScriptSmart, fetchScriptParseStatus } from "@/api/script";
-import { polishScript } from "@/api/intelligence";
+import { polishScript, recommendSynthParams } from "@/api/intelligence";
 import { ApiError } from "@/api/client";
 import EditorToolbar from "@/modules/produce/components/EditorToolbar.vue";
 import PartialAdjustBar from "@/modules/produce/components/PartialAdjustBar.vue";
 import ScriptImportModal from "@/modules/produce/components/ScriptImportModal.vue";
 import CastProfileBar from "@/modules/produce/components/CastProfileBar.vue";
 import SegmentBlock from "@/modules/produce/components/SegmentBlock.vue";
-import { newSegment, segmentCharCount, splitSegmentWithTune, autoSegmentText, autoSegmentLyrics, segmentsFromScreenplay, uniqueCharacters, type ProduceWorkMode, type ScreenplayLine, type ScriptSegment } from "@/modules/produce/types/script";
+import { newSegment, segmentCharCount, splitSegmentWithTune, autoSegmentText, autoSegmentLyrics, segmentsFromScreenplay, uniqueCharacters, segmentHasLocalTune, formatSegmentTuneLabel, synthesisLimitHint, validateSynthesisScript, SYNTH_LIMITS, type ProduceWorkMode, type ScreenplayLine, type ScriptSegment, type SynthGlobalTune } from "@/modules/produce/types/script";
 import { loadCharacterCast, rememberCastEntry, resolveCharacterCast } from "@/modules/produce/utils/characterCast";
+import { applySmartSynthToSegment, formatSmartSynthHint } from "@/modules/produce/utils/smartSynth";
 
 const props = withDefaults(
   defineProps<{
@@ -27,27 +28,37 @@ const props = withDefaults(
     compact?: boolean;
   }>(),
   {
-    maxChars: 10000,
-    placeholder: "直接粘贴剧本或长文本。支持 角色：台词 自动识别角色并分配音色；纯文本按空行分段。",
+    maxChars: SYNTH_LIMITS.singleTextMax,
+    placeholder: "",
   },
 );
+
+const isMulti = computed(() => props.workMode !== "single");
 
 const editorPlaceholder = computed(() => {
   if (props.workMode === "vocal") {
     return "粘贴歌词，支持 主唱：歌词 / 和声：歌词 格式；[副歌] 等段落标记会被忽略。纯歌词按行分段。";
   }
-  return props.placeholder;
+  if (props.workMode === "dialogue") {
+    return "粘贴剧本，每行一句对白。格式：角色：台词，或【角色】台词。支持导入剧本与智能分段。";
+  }
+  return "输入或粘贴一整段文本（长文、散文、解说）。本模式不自动拆段，始终使用上方所选的一个音色。";
 });
 
-const modeLabel = computed(() => {
-  if (props.workMode === "vocal") return "歌曲分段 · 实验念唱";
-  if (props.multiMode) return "情景配音";
-  return "";
+const modeBanner = computed(() => {
+  if (props.workMode === "vocal") {
+    return { title: "歌曲分段", desc: "多声线念唱 · 按歌词行或演唱者分段" };
+  }
+  if (props.workMode === "dialogue") {
+    return { title: "多人情景", desc: "剧本对话 · 每段可指定不同角色与音色" };
+  }
+  return { title: "单人朗读", desc: "一整段文本 · 一个音色 · 适合长文与旁白" };
 });
 
 const emit = defineEmits<{
   "update:segments": [segments: ScriptSegment[]];
   "update:multiMode": [value: boolean];
+  "tune-pending": [value: boolean];
 }>();
 
 const textareaRef = ref<HTMLTextAreaElement | null>(null);
@@ -60,7 +71,27 @@ const showImportModal = ref(false);
 const autoHint = ref("");
 const segmenting = ref(false);
 const polishing = ref(false);
+const smartTuning = ref(false);
 const llmParseEnabled = ref(false);
+const tunePending = ref(false);
+
+const globalTune = computed<SynthGlobalTune>(() => ({
+  speed: props.globalSpeed,
+  temperature: props.globalTemperature,
+}));
+
+const tunedSegments = computed(() =>
+  props.segments.filter((s) => s.text.trim() && segmentHasLocalTune(s, globalTune.value)),
+);
+
+const limitHint = computed(() => synthesisLimitHint(props.segments, globalTune.value));
+
+const overLimit = computed(() => validateSynthesisScript(props.segments, globalTune.value).ok === false);
+
+const limitMessage = computed(() => {
+  const v = validateSynthesisScript(props.segments, globalTune.value);
+  return v.ok ? "" : v.message;
+});
 
 const primary = computed({
   get: () => props.segments[0]?.text ?? "",
@@ -103,8 +134,24 @@ function fmtDuration(sec: number): string {
   return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
 }
 
+/** 多人情景：汇总各段文本供智能分段；单人朗读：取首段 */
+function collectScriptText(): string {
+  if (!isMulti.value) return primary.value.trim();
+  return props.segments
+    .map((s) => {
+      const text = s.text.trim();
+      if (!text) return "";
+      if (s.characterName && !/[：:]/.test(text.slice(0, 24))) {
+        return `${s.characterName}：${text}`;
+      }
+      return text;
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
 function insertAtCursor(insert: string) {
-  if (props.multiMode) return;
+  if (isMulti.value) return;
   const el = textareaRef.value;
   if (!el) {
     primary.value = primary.value + insert;
@@ -121,9 +168,12 @@ function insertAtCursor(insert: string) {
   });
 }
 
+watch(tunePending, (v) => emit("tune-pending", v), { immediate: true });
+
 function onClear() {
   autoHint.value = "";
-  if (props.multiMode) {
+  tunePending.value = false;
+  if (isMulti.value) {
     emit("update:segments", [newSegment(props.defaultVoiceId)]);
     return;
   }
@@ -132,9 +182,11 @@ function onClear() {
 }
 
 function onSample(sample: string) {
-  if (props.multiMode) {
-    const seg = newSegment(props.defaultVoiceId, sample);
-    emit("update:segments", [...props.segments, seg]);
+  if (isMulti.value) {
+    emit("update:segments", [newSegment(props.defaultVoiceId, sample)]);
+    void nextTick(() => {
+      void tryAutoSegment(sample, { preferLlm: props.workMode === "dialogue" });
+    });
     return;
   }
   primary.value = sample;
@@ -159,20 +211,23 @@ function applyPartialTune() {
     pitch: localPitch.value,
   });
   emit("update:segments", next);
-  if (next.length > 1) emit("update:multiMode", true);
-}
-
-function toggleMultiMode() {
-  const next = !props.multiMode;
-  if (next && props.segments.length === 1) {
+  tunePending.value = true;
+  const tuned = next.filter((s) => segmentHasLocalTune(s, globalTune.value));
+  const labels = tuned.map((s) => formatSegmentTuneLabel(s, globalTune.value)).join("；");
+  const parts: string[] = [];
+  if (next.length > 1) {
     emit("update:multiMode", true);
-    return;
+    parts.push("已切换到「多人情景」（局部调节需分段合成）。");
   }
-  if (!next) {
-    const merged = props.segments.map((s) => s.text).join("");
-    emit("update:segments", [newSegment(props.defaultVoiceId, merged)]);
+  parts.push(
+    labels
+      ? `已应用局部调节：${labels}。请点击底部「重新生成」试听效果。`
+      : "已应用到选区，请点击底部「重新生成」试听。",
+  );
+  autoHint.value = parts.join("");
+  if (textareaRef.value) {
+    textareaRef.value.setSelectionRange(end, end);
   }
-  emit("update:multiMode", next);
 }
 
 function addSegment() {
@@ -214,7 +269,12 @@ function applyCastToSegments() {
 
 function onCastProfileChange() { applyCastToSegments(); }
 
-function voiceIds() { return props.voices.map((v) => v.id).filter(Boolean); }
+function voiceIds() {
+  return props.voices
+    .filter((v) => v.synthReady !== false)
+    .map((v) => v.id)
+    .filter(Boolean);
+}
 
 function applyLinesFromParse(lines: ScreenplayLine[], source: "llm" | "screenplay" | "paragraph") {
   const cast = resolveCharacterCast(uniqueCharacters(lines), voiceIds(), loadCharacterCast());
@@ -230,7 +290,7 @@ function applyLinesFromParse(lines: ScreenplayLine[], source: "llm" | "screenpla
   } else if (source === "screenplay") {
     autoHint.value = `已识别 ${lines.length} 句 · ${chars.length} 个角色，已自动分配音色`;
   } else {
-    autoHint.value = `已按 ${lines.length} 个段落自动分段并分配音色`;
+    autoHint.value = `已按 ${lines.length} 个段落自动分段（同一音色）`;
   }
 }
 
@@ -255,7 +315,7 @@ function applyAutoSegmentResult(raw: string): boolean {
     }
     emit("update:segments", result.segments);
     emit("update:multiMode", true);
-    autoHint.value = `已按 ${result.lineCount} 个段落自动分段并分配音色`;
+    autoHint.value = `已按 ${result.lineCount} 个段落自动分段（同一音色）`;
   }
   return true;
 }
@@ -274,8 +334,8 @@ async function tryLLMSegment(text: string): Promise<boolean> {
 }
 
 async function tryAutoSegment(raw?: string, opts?: { preferLlm?: boolean }) {
-  if (props.multiMode || props.busy || segmenting.value) return false;
-  const text = (raw ?? primary.value).trim();
+  if (props.workMode === "single" || props.busy || segmenting.value) return false;
+  const text = (raw ?? collectScriptText()).trim();
   if (!text) return false;
 
   if (props.workMode === "vocal") {
@@ -290,7 +350,7 @@ async function tryAutoSegment(raw?: string, opts?: { preferLlm?: boolean }) {
     if (preferLlm && llmParseEnabled.value) {
       if (await tryLLMSegment(text)) return true;
       if (applyAutoSegmentResult(text)) return true;
-      autoHint.value = "未能自动分段，请检查文本或手动使用情景配音";
+      autoHint.value = "未能自动分段，请检查文本格式（角色：台词）或手动添加段落";
       return false;
     }
     if (applyAutoSegmentResult(text)) return true;
@@ -300,20 +360,23 @@ async function tryAutoSegment(raw?: string, opts?: { preferLlm?: boolean }) {
 }
 
 async function onSmartSegment() {
-  const ok = await tryAutoSegment(undefined, { preferLlm: props.workMode !== "vocal" });
+  const ok = await tryAutoSegment(undefined, { preferLlm: props.workMode === "dialogue" });
   if (!ok && !autoHint.value) {
+    const hasText = collectScriptText().length > 0;
     autoHint.value =
       props.workMode === "vocal"
         ? "请使用 主唱：歌词 格式，或直接粘贴多行歌词"
-        : llmParseEnabled.value
-          ? "当前内容无需分段，或请使用 角色：台词 格式"
-          : "规则分段未命中；可在服务端启用 DeepSeek 后使用智能分段";
+        : !hasText
+          ? "请先在段落中输入或粘贴剧本，再点「智能分段」"
+          : llmParseEnabled.value
+            ? "当前内容无需分段，或请使用 角色：台词 格式"
+            : "规则分段未命中；可在服务端启用 DeepSeek 后使用智能分段";
   }
 }
 
 async function onPolishScript() {
   if (!llmParseEnabled.value || polishing.value) return;
-  const text = props.multiMode
+  const text = isMulti.value
     ? props.segments.map((s) => s.characterName ? `${s.characterName}：${s.text}` : s.text).join("\n")
     : primary.value.trim();
   if (!text) { autoHint.value = "请先输入文本后再使用润色"; return; }
@@ -323,7 +386,7 @@ async function onPolishScript() {
     const result = await polishScript({ text, polish_scope: "full" });
     if (result.mode === "llm") {
       autoHint.value = `润色完成 — ${result.changes_summary}`;
-      if (props.multiMode) {
+      if (isMulti.value) {
         await tryAutoSegment(result.polished_text, { preferLlm: true });
       } else {
         primary.value = result.polished_text.slice(0, props.maxChars);
@@ -336,13 +399,57 @@ async function onPolishScript() {
   } finally { polishing.value = false; }
 }
 
-function onPaste() {
-  if (props.multiMode || props.busy) return;
-  requestAnimationFrame(() => { void tryAutoSegment(); });
+async function onSmartTuneAll() {
+  if (smartTuning.value || props.busy) return;
+  const indices = props.segments
+    .map((seg, index) => (seg.text.trim() ? index : -1))
+    .filter((index) => index >= 0);
+  if (!indices.length) {
+    autoHint.value = "请先输入台词后再使用智能表演分析";
+    return;
+  }
+
+  smartTuning.value = true;
+  autoHint.value = "";
+  let lastMode: "llm" | "fallback" = "fallback";
+  let lastHint = "";
+
+  try {
+    const next = [...props.segments];
+    for (const index of indices) {
+      const seg = next[index];
+      const resp = await recommendSynthParams({
+        text: seg.text.trim(),
+        character_hint: seg.characterName,
+      });
+      next[index] = applySmartSynthToSegment(seg, resp.result);
+      if (resp.mode === "llm") lastMode = "llm";
+      lastHint = formatSmartSynthHint(resp.result, resp.mode);
+    }
+    emit("update:segments", next);
+    tunePending.value = true;
+    emit("tune-pending", true);
+    const via = lastMode === "llm" ? "AI" : "规则";
+    autoHint.value =
+      indices.length === 1
+        ? lastHint
+        : `${via} 已分析 ${indices.length} 段台词并写入情感与韵律参数。末段：${lastHint}`;
+  } catch (err: unknown) {
+    autoHint.value = err instanceof Error ? err.message : "智能表演分析失败，请稍后重试";
+  } finally {
+    smartTuning.value = false;
+  }
+}
+
+function onSegmentPaste() {
+  if (props.workMode === "single" || props.busy || segmenting.value) return;
+  requestAnimationFrame(() => {
+    void tryAutoSegment(undefined, { preferLlm: props.workMode === "dialogue" });
+  });
 }
 
 function onEditorBlur() {
-  if (props.multiMode || props.busy || segmenting.value) return;
+  if (props.workMode === "single" || isMulti.value || props.busy || segmenting.value) return;
   applyAutoSegmentResult(primary.value.trim());
 }
 
@@ -356,20 +463,26 @@ function removeSegment(index: number) {
   <div class="script-editor" :class="{ 'script-editor--compact': compact }">
     <EditorToolbar
       :disabled="busy || segmenting"
-      :multi-mode="multiMode"
+      :work-mode="workMode"
       :compact="compact"
       :segmenting="segmenting"
       :polishing="polishing"
+      :smart-tuning="smartTuning"
       :llm-enabled="llmParseEnabled"
       @insert-pause="insertAtCursor"
       @clear="onClear"
       @sample="onSample"
-      @toggle-multi="toggleMultiMode"
       @add-segment="addSegment"
       @import-script="showImportModal = true"
       @smart-segment="onSmartSegment"
+      @smart-tune="onSmartTuneAll"
       @polish-script="onPolishScript"
     />
+
+    <p class="editor-mode-banner" role="status">
+      <strong>{{ modeBanner.title }}</strong>
+      <span>{{ modeBanner.desc }}</span>
+    </p>
 
     <ScriptImportModal
       :open="showImportModal"
@@ -390,17 +503,30 @@ function removeSegment(index: number) {
 
     <!-- 局部调节条 -->
     <PartialAdjustBar
-      v-if="!multiMode"
+      v-if="!isMulti"
       v-model:local-speed="localSpeed"
       v-model:local-pitch="localPitch"
       :selection-length="selectionLength"
+      :global-speed="globalSpeed"
       :disabled="busy || selectionLength === 0"
       @apply="applyPartialTune"
     />
 
+    <div v-if="tunedSegments.length" class="tune-status" role="status">
+      <span class="tune-status__label">已调节片段</span>
+      <span
+        v-for="seg in tunedSegments"
+        :key="seg.id"
+        class="tune-status__chip"
+      >
+        {{ formatSegmentTuneLabel(seg, globalTune) }}
+      </span>
+      <span v-if="tunePending" class="tune-status__pending">待重新生成</span>
+    </div>
+
     <!-- 主体编辑区 -->
     <div class="editor-body">
-      <template v-if="multiMode">
+      <template v-if="isMulti">
         <div class="editor-body__cast">
           <CastProfileBar :disabled="busy" @change="onCastProfileChange" />
         </div>
@@ -417,6 +543,7 @@ function removeSegment(index: number) {
             :can-remove="segments.length > 1"
             @update="updateSegment(i, $event)"
             @remove="removeSegment(i)"
+            @paste="onSegmentPaste"
           />
           <button type="button" class="seg-add" :disabled="busy" @click="addSegment">
             <span class="seg-add__plus" aria-hidden="true">+</span>
@@ -445,8 +572,16 @@ function removeSegment(index: number) {
       <div v-if="!hasContent && !busy" class="editor-empty">
         <p class="editor-empty__title">开始书写</p>
         <p class="editor-empty__desc">
-          粘贴剧本或输入文本，支持 <code>角色：台词</code> 格式<br />
-          粘贴后自动识别角色，适合多人情景对话
+          <template v-if="workMode === 'single'">
+            粘贴长文或输入解说词，使用上方选定的单一音色生成
+          </template>
+          <template v-else-if="workMode === 'dialogue'">
+            粘贴剧本，支持 <code>角色：台词</code> 格式<br />
+            可使用「导入剧本」或「智能分段」
+          </template>
+          <template v-else>
+            粘贴歌词，支持 <code>主唱：歌词</code> 与段落标记
+          </template>
         </p>
       </div>
 
@@ -463,11 +598,16 @@ function removeSegment(index: number) {
       <div class="editor-foot__left">
         <span class="editor-stat">{{ charCount }} / {{ maxChars }} 字</span>
         <span class="editor-stat__sep" aria-hidden="true" />
-        <span class="editor-stat">约 {{ fmtDuration(estSeconds) }}</span>
+        <span class="editor-stat" :class="{ 'editor-stat--warn': overLimit }">约 {{ fmtDuration(estSeconds) }}</span>
       </div>
       <div class="editor-foot__right">
-        <span v-if="multiMode" class="editor-chip">
-          {{ segments.length }} 段 · 情景配音
+        <span class="editor-chip editor-chip--limit" :class="{ 'editor-chip--warn': overLimit }" :title="limitMessage">
+          {{ limitHint }}
+        </span>
+        <span v-if="isMulti" class="editor-chip">
+          {{ segments.length }} 段
+          <template v-if="workMode === 'dialogue'"> · 多人情景</template>
+          <template v-else-if="workMode === 'vocal'"> · 歌曲分段</template>
         </span>
         <span v-if="llmParseEnabled" class="editor-chip editor-chip--soft">
           深度理解就绪
@@ -488,6 +628,31 @@ function removeSegment(index: number) {
 }
 
 /* ── 提示条 ──────────────────────────────────────── */
+.editor-mode-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0 18px 12px;
+  padding: 10px 14px;
+  border-radius: var(--radius-ui);
+  background: rgb(20 19 18 / 0.04);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-ink-muted);
+}
+
+.script-editor--compact .editor-mode-banner {
+  margin: 0 12px 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.editor-mode-banner strong {
+  font-size: 13px;
+  color: var(--color-ink);
+}
+
 .editor-hint {
   display: flex;
   align-items: center;
@@ -798,5 +963,53 @@ function removeSegment(index: number) {
 .editor-chip--soft {
   background: var(--color-indigo-soft);
   color: var(--color-indigo);
+}
+
+.editor-chip--limit {
+  max-width: min(280px, 42vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editor-chip--warn {
+  color: var(--color-danger, #b42318);
+  border-color: rgb(180 35 24 / 0.35);
+  background: rgb(254 243 242 / 0.9);
+}
+
+.editor-stat--warn {
+  color: var(--color-danger, #b42318);
+}
+
+.tune-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  padding: 8px 16px;
+  border-bottom: 1px solid rgb(212 146 74 / 0.2);
+  background: rgb(255 248 235 / 0.9);
+}
+
+.tune-status__label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #8a5a24;
+}
+
+.tune-status__chip {
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgb(212 146 74 / 0.45);
+  background: #fff;
+  font-size: 11px;
+  color: #6b4423;
+}
+
+.tune-status__pending {
+  font-size: 11px;
+  font-weight: 600;
+  color: #b45309;
 }
 </style>

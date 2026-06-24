@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { formatPriceCents, getDevUserId, type CatalogEntry } from "@/api/catalog";
 import TapePlayer from "@/modules/voice/components/studio/TapePlayer.vue";
-import { avatarInitial, licenseLabel } from "@/utils/catalogDisplay";
+import { avatarInitial, catalogAccessPillClass, catalogAccessStatus, licenseLabel } from "@/utils/catalogDisplay";
 
 defineProps<{
   entries: CatalogEntry[];
@@ -24,6 +24,10 @@ const emit = defineEmits<{
   loadCatalog: [];
   contactCreator: [ownerUserId: string, voiceTitle?: string];
 }>();
+
+function accessOf(e: CatalogEntry) {
+  return catalogAccessStatus(e, getDevUserId());
+}
 </script>
 
 <template>
@@ -106,8 +110,7 @@ const emit = defineEmits<{
 
       <div class="catalog-hero-card__foot">
         <span class="hint">{{ licenseLabel(e.license_type) }}</span>
-        <span v-if="!e.can_use && e.price_cents > 0" class="pill pill--warn">需购买</span>
-        <span v-else-if="e.can_use" class="pill pill--ok">已授权</span>
+        <span :class="catalogAccessPillClass(accessOf(e).tone)">{{ accessOf(e).label }}</span>
         <div class="catalog-hero-card__actions row-actions">
           <button type="button" class="text-action text-action--accent" @click.stop="emit('selectVoice', e.catalog_id)">
             试听合成

@@ -2,9 +2,11 @@
 defineProps<{
   busy?: boolean;
   disabled?: boolean;
+  disabledHint?: string;
   aiAck?: boolean;
   generateLabel?: string;
   compact?: boolean;
+  pendingTune?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -30,11 +32,15 @@ const ack = defineModel<boolean>("aiAck", { default: true });
       </span>
     </label>
 
+    <p v-if="disabled && disabledHint" class="action-bar__hint">{{ disabledHint }}</p>
+
     <!-- 主按钮 -->
     <button
       type="button"
       class="action-btn"
+      :class="{ 'action-btn--pending': pendingTune && !busy }"
       :disabled="disabled || busy || !ack"
+      :title="pendingTune ? '局部调节已应用，点击重新生成' : undefined"
       @click="emit('generate')"
     >
       <!-- 录制指示 -->
@@ -44,7 +50,7 @@ const ack = defineModel<boolean>("aiAck", { default: true });
       <span v-if="busy" class="action-btn__spinner" aria-hidden="true" />
 
       <span class="action-btn__text">
-        {{ busy ? "正在合成…" : (generateLabel ?? "开始生成语音") }}
+        {{ busy ? "正在合成…" : (pendingTune ? "重新生成（含局部调节）" : (generateLabel ?? "开始生成语音")) }}
       </span>
 
       <kbd v-if="!busy && !compact" class="action-btn__kbd">Ctrl+Enter</kbd>
@@ -68,6 +74,18 @@ const ack = defineModel<boolean>("aiAck", { default: true });
   flex-direction: column;
   align-items: stretch;
   padding: 14px 16px;
+}
+
+.action-bar__hint {
+  flex: 1 1 100%;
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-danger, #b42318);
+  line-height: 1.4;
+}
+
+.action-btn--pending {
+  box-shadow: 0 0 0 2px rgb(212 146 74 / 0.45);
 }
 
 /* ── 确认 ──────────────────────────────────────────── */

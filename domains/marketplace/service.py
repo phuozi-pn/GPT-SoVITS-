@@ -15,6 +15,7 @@ from voice_platform.config import get_settings
 from voice_platform.job.queue import RedisJobQueue
 from voice_platform.job.repository import (
     JobRepository,
+    QualityReportRepository,
     VoiceAuthorizationRepository,
     VoiceCatalogRepository,
     VoiceGrantRepository,
@@ -90,7 +91,17 @@ class MarketplaceService:
             prohibited_domains=list(entry.prohibited_domains_json or []),
             policy_version=entry.policy_version or 1,
             purchased=purchased,
+            quality_pass=self._quality_pass_for_version(ver.id),
+            similarity_score=self._similarity_for_version(ver.id),
         )
+
+    def _quality_pass_for_version(self, voice_version_id: UUID) -> bool | None:
+        report = QualityReportRepository(self._session).get(voice_version_id)
+        return report.quality_pass if report else None
+
+    def _similarity_for_version(self, voice_version_id: UUID) -> float | None:
+        report = QualityReportRepository(self._session).get(voice_version_id)
+        return report.similarity_score if report else None
 
     def _sync_demo_from_job(self, entry) -> None:
         if entry.demo_audio_url or not entry.demo_job_id:
@@ -206,6 +217,18 @@ class MarketplaceService:
         return out
 
     def publish_to_catalog(self, *, owner_user_id: UUID, body: CatalogPublishRequest) -> CatalogEntryResponse:
+        from domains.marketplace.invite_service import (
+            MarketplaceInviteService,
+            MarketplaceInviteServiceError,
+        )
+
+        invite_svc = MarketplaceInviteService(self._session)
+        try:
+            invite_svc.ensure_can_publish(user_id=owner_user_id)
+            invite_svc.ensure_quality_pass(voice_version_id=body.voice_version_id)
+        except MarketplaceInviteServiceError as exc:
+            raise MarketplaceServiceError(exc.code, exc.message, exc.http_status) from exc
+
         ver = self._versions.get(body.voice_version_id)
         if not ver or ver.owner_user_id != owner_user_id:
             raise MarketplaceServiceError("VOICE_NOT_FOUND", "Voice version not found", 404)
@@ -270,10 +293,18 @@ class MarketplaceService:
             raise MarketplaceServiceError("VOICE_NOT_FOUND", "Voice version not found", 404)
         return item
 
-    def reject_catalog_entry(self, *, catalog_id: UUID) -> CatalogEntryResponse:
-        entry = self._catalog.reject(catalog_id)
+    def reject_catalog_entry(self, *, catalog_id: UUID, reason: str) -> CatalogEntryResponse:
+        from voice_platform.social.system import send_system_notice
+
+        entry = self._catalog.reject(catalog_id, reason=reason)
         if not entry:
             raise MarketplaceServiceError("CATALOG_NOT_FOUND", "Pending catalog entry not found", 404)
+        send_system_notice(
+            self._session,
+            recipient_user_id=entry.owner_user_id,
+            conversation_peer_user_id=entry.owner_user_id,
+            body=f"【系统】你的音色馆上架申请「{entry.title}」未通过审核。原因：{reason.strip()}",
+        )
         item = self._entry_response(entry, can_use=False)
         if not item:
             raise MarketplaceServiceError("VOICE_NOT_FOUND", "Voice version not found", 404)

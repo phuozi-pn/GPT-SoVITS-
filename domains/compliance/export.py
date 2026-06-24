@@ -99,6 +99,11 @@ def apply_compliance_label(
         "comment": "AI_GENERATED",
         "watermark_embedded": watermark_embedded,
     }
+    if watermark is not None:
+        metadata["watermark_user_id"] = watermark.user_id
+        metadata["watermark_voice_id"] = watermark.voice_id
+        metadata["watermark_job_id"] = watermark.job_id
+        metadata["watermark_timestamp"] = watermark.timestamp
     return output, metadata
 
 

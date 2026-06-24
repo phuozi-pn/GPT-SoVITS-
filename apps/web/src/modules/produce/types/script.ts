@@ -52,8 +52,121 @@ export type SynthesisOptions = {
   top_p?: number;
   emotion?: string | null;
   emotion_strength?: number;
+  project_type?: string | null;
   segments?: SynthesisSegmentInput[];
 };
+
+/** 与后端 ComplianceGateway / SynthesisRequest 对齐 */
+export const SYNTH_LIMITS = {
+  singleTextMax: 5000,
+  segmentTextMax: 2000,
+  maxSegments: 50,
+} as const;
+
+export type SynthGlobalTune = {
+  speed: number;
+  temperature: number;
+  emotion?: string | null;
+  emotionStrength?: number;
+};
+
+export function segmentHasLocalTune(seg: ScriptSegment, global: SynthGlobalTune): boolean {
+  const globalEmotion = global.emotion ?? null;
+  const globalEmotionStrength = global.emotionStrength ?? 0.5;
+  return (
+    Math.abs(seg.pitch - 1) >= 0.01 ||
+    (seg.emotion != null && seg.emotion !== globalEmotion) ||
+    Math.abs(seg.emotionStrength - globalEmotionStrength) >= 0.01 ||
+    seg.pauseDuration > 0 ||
+    (seg.speed != null && Math.abs(seg.speed - global.speed) > 0.001) ||
+    (seg.temperature != null && Math.abs(seg.temperature - global.temperature) > 0.001)
+  );
+}
+
+export function formatSegmentTuneLabel(seg: ScriptSegment, global: SynthGlobalTune): string {
+  const parts: string[] = [];
+  if (seg.speed != null && Math.abs(seg.speed - global.speed) > 0.001) {
+    parts.push(`语速 ${seg.speed.toFixed(2)}`);
+  }
+  if (Math.abs(seg.pitch - 1) >= 0.01) {
+    parts.push(`音调 ${seg.pitch.toFixed(2)}`);
+  }
+  if (seg.temperature != null && Math.abs(seg.temperature - global.temperature) > 0.001) {
+    parts.push(`温度 ${seg.temperature.toFixed(2)}`);
+  }
+  const preview = seg.text.trim().slice(0, 10) + (seg.text.trim().length > 10 ? "…" : "");
+  const body = parts.length ? parts.join(" · ") : "已调节";
+  return preview ? `「${preview}」${body}` : body;
+}
+
+export function usesSegmentSynthesis(
+  segments: ScriptSegment[],
+  global: SynthGlobalTune,
+): boolean {
+  const nonEmpty = segments.filter((s) => s.text.trim());
+  if (nonEmpty.length > 1) return true;
+  if (new Set(nonEmpty.map((s) => s.voiceVersionId)).size > 1) return true;
+  return nonEmpty.some((s) => segmentHasLocalTune(s, global));
+}
+
+/** 轮询合成任务超时：多段/长文在真实引擎下可能超过 3 分钟 */
+export function estimateSynthPollTimeoutMs(
+  segments: ScriptSegment[],
+  global: SynthGlobalTune,
+): number {
+  const nonEmpty = segments.filter((s) => s.text.trim());
+  const segCount = Math.max(1, nonEmpty.length);
+  const chars = nonEmpty.reduce((n, s) => n + s.text.trim().length, 0);
+  const multi = usesSegmentSynthesis(nonEmpty, global);
+  const base = multi ? 180_000 : 120_000;
+  return Math.min(900_000, base + segCount * 45_000 + Math.floor(chars / 100) * 2_000);
+}
+
+export function validateSynthesisScript(
+  segments: ScriptSegment[],
+  global: SynthGlobalTune,
+): { ok: true } | { ok: false; message: string } {
+  const nonEmpty = segments.filter((s) => s.text.trim());
+  if (!nonEmpty.length) {
+    return { ok: false, message: "台本为空或只有标点——请输入有效台词" };
+  }
+  if (nonEmpty.length > SYNTH_LIMITS.maxSegments) {
+    return {
+      ok: false,
+      message: `分段过多（最多 ${SYNTH_LIMITS.maxSegments} 段，当前 ${nonEmpty.length} 段）`,
+    };
+  }
+
+  const segmented = usesSegmentSynthesis(nonEmpty, global);
+  if (!segmented && nonEmpty.length === 1) {
+    const len = nonEmpty[0].text.trim().length;
+    if (len > SYNTH_LIMITS.singleTextMax) {
+      return {
+        ok: false,
+        message: `单段台词不超过 ${SYNTH_LIMITS.singleTextMax} 字（当前 ${len} 字）`,
+      };
+    }
+    return { ok: true };
+  }
+
+  for (let i = 0; i < nonEmpty.length; i += 1) {
+    const len = nonEmpty[i].text.trim().length;
+    if (len > SYNTH_LIMITS.segmentTextMax) {
+      return {
+        ok: false,
+        message: `第 ${i + 1} 段超过 ${SYNTH_LIMITS.segmentTextMax} 字（当前 ${len} 字）`,
+      };
+    }
+  }
+  return { ok: true };
+}
+
+export function synthesisLimitHint(segments: ScriptSegment[], global: SynthGlobalTune): string {
+  if (usesSegmentSynthesis(segments, global)) {
+    return `多段/局部调节：每段 ≤ ${SYNTH_LIMITS.segmentTextMax} 字，最多 ${SYNTH_LIMITS.maxSegments} 段`;
+  }
+  return `单段合成：≤ ${SYNTH_LIMITS.singleTextMax} 字`;
+}
 
 export function newSegment(voiceVersionId: string, text = "", characterName?: string): ScriptSegment {
   return {
@@ -76,26 +189,42 @@ export function segmentCharCount(segments: ScriptSegment[]): number {
 
 export function buildSynthesisPayload(
   segments: ScriptSegment[],
-  global: { speed: number; temperature: number; topP?: number; emotion?: string | null; emotionStrength?: number },
+  global: {
+    speed: number;
+    temperature: number;
+    topP?: number;
+    emotion?: string | null;
+    emotionStrength?: number;
+    projectType?: string | null;
+  },
+  fallbackVoiceVersionId?: string,
 ): SynthesisOptions {
-  const nonEmpty = segments.filter((s) => s.text.trim());
+  const fallback = (fallbackVoiceVersionId ?? "").trim();
+  const nonEmpty = segments
+    .filter((s) => s.text.trim())
+    .map((s) => ({
+      ...s,
+      voiceVersionId: (s.voiceVersionId || fallback).trim(),
+    }));
   if (!nonEmpty.length) {
     throw new Error("台本为空");
+  }
+  if (nonEmpty.some((s) => !s.voiceVersionId)) {
+    throw new Error("请先选择音色版本后再合成");
   }
 
   const globalEmotion = global.emotion ?? null;
   const globalEmotionStrength = global.emotionStrength ?? 0.5;
+  const projectType = global.projectType?.trim() || null;
 
   const hasMultiVoice = new Set(nonEmpty.map((s) => s.voiceVersionId)).size > 1;
-  const hasLocalTune = nonEmpty.some(
-    (s) =>
-      s.pitch !== 1 ||
-      (s.emotion != null && s.emotion !== globalEmotion) ||
-      s.emotionStrength !== globalEmotionStrength ||
-      s.pauseDuration > 0 ||
-      (s.speed != null && Math.abs(s.speed - global.speed) > 0.001) ||
-      (s.temperature != null && Math.abs(s.temperature - global.temperature) > 0.001),
-  );
+  const globalTune: SynthGlobalTune = {
+    speed: global.speed,
+    temperature: global.temperature,
+    emotion: globalEmotion,
+    emotionStrength: globalEmotionStrength,
+  };
+  const hasLocalTune = nonEmpty.some((s) => segmentHasLocalTune(s, globalTune));
 
   if (nonEmpty.length === 1 && !hasMultiVoice && !hasLocalTune) {
     const only = nonEmpty[0];
@@ -107,6 +236,7 @@ export function buildSynthesisPayload(
       top_p: global.topP ?? 1,
       emotion: globalEmotion,
       emotion_strength: globalEmotionStrength,
+      project_type: projectType,
     };
   }
 
@@ -116,6 +246,7 @@ export function buildSynthesisPayload(
     top_p: global.topP ?? 1,
     emotion: globalEmotion,
     emotion_strength: globalEmotionStrength,
+    project_type: projectType,
     segments: nonEmpty.map((s) => ({
       voice_version_id: s.voiceVersionId,
       text: s.text.trim(),
@@ -136,6 +267,24 @@ const SCREENPLAY_LINE_PATTERNS: RegExp[] = [
   /^([^|]{1,20})\|(.+)$/,
 ];
 
+/** 角色名：短标签；排除叙述句里夹带的冒号（如「说了一句：今天」） */
+export function isLikelyCharacterName(name: string): boolean {
+  const n = name.trim();
+  if (!n || n.length > 12) return false;
+  if (/[。！？；，、,.!?;]/.test(n)) return false;
+  if (/^段落\d+$/.test(n)) return false;
+  return true;
+}
+
+function matchScreenplayLine(line: string): ScreenplayLine | null {
+  for (const re of SCREENPLAY_LINE_PATTERNS) {
+    const m = line.match(re);
+    if (!m || !isLikelyCharacterName(m[1])) continue;
+    return { character: m[1].trim(), text: m[2].trim() };
+  }
+  return null;
+}
+
 /** 解析「角色：台词」格式剧本为分段列表 */
 export function parseScreenplayScript(raw: string): ScreenplayLine[] {
   const lines = raw
@@ -146,15 +295,11 @@ export function parseScreenplayScript(raw: string): ScreenplayLine[] {
   const out: ScreenplayLine[] = [];
 
   for (const line of lines) {
-    let matched = false;
-    for (const re of SCREENPLAY_LINE_PATTERNS) {
-      const m = line.match(re);
-      if (!m) continue;
-      out.push({ character: m[1].trim(), text: m[2].trim() });
-      matched = true;
-      break;
+    const matched = matchScreenplayLine(line);
+    if (matched) {
+      out.push(matched);
+      continue;
     }
-    if (matched) continue;
 
     if (out.length && !/[：:]|^【/.test(line)) {
       out[out.length - 1].text += `\n${line}`;
@@ -234,12 +379,7 @@ export function looksLikeScreenplay(raw: string): boolean {
 
   let hits = 0;
   for (const line of lines) {
-    for (const re of SCREENPLAY_LINE_PATTERNS) {
-      if (re.test(line)) {
-        hits += 1;
-        break;
-      }
-    }
+    if (matchScreenplayLine(line)) hits += 1;
   }
   return hits >= 2 || (hits === 1 && lines.length >= 2);
 }
@@ -273,11 +413,7 @@ export function autoSegmentText(
 
   const paragraphs = text.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
   if (paragraphs.length > 1) {
-    const labels = paragraphs.map((_, i) => `段落${i + 1}`);
-    const resolvedCast = autoAssignCast(labels, voiceIds, cast);
-    const segments = paragraphs.map((p, i) =>
-      newSegment(resolvedCast[labels[i]] ?? defaultVoiceId, p, labels[i]),
-    );
+    const segments = paragraphs.map((p, i) => newSegment(defaultVoiceId, p, `段落${i + 1}`));
     return {
       segments,
       mode: "paragraph",

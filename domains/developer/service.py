@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from uuid import UUID
 
+from voice_platform.developer.models import ApiKeyRow
 from voice_platform.developer.repository import ApiKeyRepository, hash_api_key
-from voice_platform.developer.schemas import ApiKeyCreatedResponse, ApiKeySummary
+from voice_platform.developer.schemas import ApiKeyCreatedResponse, ApiKeySummary, ApiKeyWebhookUpdateRequest
 
 
 class DeveloperServiceError(Exception):
@@ -40,11 +41,37 @@ class DeveloperService:
                 key_prefix=r.key_prefix,
                 scopes=list(r.scopes_json or []),
                 revoked=r.revoked_at is not None,
+                webhook_url=r.webhook_url,
                 last_used_at=r.last_used_at,
                 created_at=r.created_at,
             )
             for r in self._repo.list_for_user(user_id)
         ]
+
+    def update_webhook(
+        self,
+        user_id: UUID,
+        key_id: UUID,
+        body: ApiKeyWebhookUpdateRequest,
+    ) -> ApiKeySummary:
+        row = self._repo.update_webhook(
+            key_id=key_id,
+            user_id=user_id,
+            webhook_url=body.webhook_url,
+            webhook_secret=body.webhook_secret,
+        )
+        if not row:
+            raise DeveloperServiceError("API_KEY_NOT_FOUND", "API key not found", 404)
+        return ApiKeySummary(
+            key_id=row.id,
+            name=row.name,
+            key_prefix=row.key_prefix,
+            scopes=list(row.scopes_json or []),
+            revoked=False,
+            webhook_url=row.webhook_url,
+            last_used_at=row.last_used_at,
+            created_at=row.created_at,
+        )
 
     def revoke_key(self, user_id: UUID, key_id: UUID) -> ApiKeySummary:
         row = self._repo.revoke(key_id, user_id)
@@ -56,6 +83,7 @@ class DeveloperService:
             key_prefix=row.key_prefix,
             scopes=list(row.scopes_json or []),
             revoked=True,
+            webhook_url=row.webhook_url,
             last_used_at=row.last_used_at,
             created_at=row.created_at,
         )

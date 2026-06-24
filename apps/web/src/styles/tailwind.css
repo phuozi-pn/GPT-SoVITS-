@@ -3048,8 +3048,83 @@
   .discover-feed {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 16px;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
     padding: var(--surface-py) var(--surface-px);
+  }
+
+  .discover-feed--split {
+    display: grid;
+    gap: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  @media (min-width: 960px) {
+    .discover-feed--split {
+      grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
+      align-items: stretch;
+    }
+  }
+
+  .discover-feed__aside {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: var(--surface-py) var(--surface-px);
+    border-bottom: 1px solid var(--surface-line);
+    background: var(--surface-muted);
+  }
+
+  @media (min-width: 960px) {
+    .discover-feed__aside {
+      border-bottom: none;
+      border-right: 1px solid var(--surface-line);
+      overflow-y: auto;
+      position: sticky;
+      top: 0;
+      align-self: start;
+      max-height: 100%;
+    }
+  }
+
+  .discover-feed__main {
+    min-width: 0;
+    min-height: 0;
+    overflow-y: auto;
+    padding: var(--surface-py) var(--surface-px);
+  }
+
+  .discover-feed__filters-label {
+    margin: 0 0 8px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-ink-faint);
+  }
+
+  .feed-tabs--stack {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+  }
+
+  .feed-tabs--stack .feed-tabs__item {
+    justify-content: space-between;
+    width: 100%;
+    padding: 8px 12px;
+  }
+
+  .page-surface--social > .social-subnav {
+    flex-shrink: 0;
+  }
+
+  .page-surface--social > .discover-feed .compose-card {
+    border-color: var(--surface-line);
+    background: var(--surface-muted);
   }
 
   .discover-panel {

@@ -84,6 +84,7 @@ def open_synthesis(
         raise_domain_http(exc)
 
     payload.format = body.format
+    payload.source_api_key_id = key_row.id
     submitted = SynthesisService(session).submit(
         owner_user_id=user_id,
         payload=payload,

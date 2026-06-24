@@ -7,4 +7,10 @@ export const opsRoutes: RouteRecordRaw[] = [
     component: () => import("@/modules/ops/views/AdminView.vue"),
     meta: { shell: "workbench", module: "ops", requiresAuth: true, requiresAdmin: true, labs: true },
   },
+  {
+    path: "/developer",
+    name: "developer",
+    component: () => import("@/modules/ops/views/DeveloperView.vue"),
+    meta: { shell: "workbench", module: "ops", requiresAuth: true, labs: true },
+  },
 ];

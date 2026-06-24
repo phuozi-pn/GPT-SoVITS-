@@ -44,9 +44,13 @@ def test_synthesize_sets_weights_before_tts():
         calls.append(url)
         return httpx.Response(200, content=b"RIFF")
 
-    with patch.object(httpx.Client, "__enter__", return_value=MagicMock(get=fake_get, post=fake_post)):
-        with patch.object(httpx.Client, "__exit__", return_value=False):
-            adapter.synthesize(ctx)
+    with patch(
+        "workers.infer.runner.resolve_engine_ref_container",
+        return_value="/workspace/GPT/data/storage/u/a.wav",
+    ), patch.object(httpx.Client, "__enter__", return_value=MagicMock(get=fake_get, post=fake_post)), patch.object(
+        httpx.Client, "__exit__", return_value=False
+    ):
+        adapter.synthesize(ctx)
 
     assert calls[0].endswith("/set_gpt_weights")
     assert calls[1].endswith("/set_sovits_weights")

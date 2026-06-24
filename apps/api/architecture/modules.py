@@ -40,6 +40,7 @@ API_MODULES: tuple[tuple[ApiModuleId, str, tuple[ApiRouteSpec, ...]], ...] = (
         (
             ApiRouteSpec("platform", "auth", "auth", ("auth",), "登录与会话"),
             ApiRouteSpec("platform", "usage", "usage", ("quota",), "配额与用量"),
+            ApiRouteSpec("platform", "platform", "platform", (), "平台能力与配置"),
             ApiRouteSpec("platform", "jobs", "jobs", ("jobs",), "Job 状态查询"),
             ApiRouteSpec("platform", "exports", "exports", ("jobs", "compliance"), "合规导出下载"),
             ApiRouteSpec("platform", "watermark", "watermark", ("watermark",), "数字水印检测"),
@@ -61,9 +62,11 @@ API_MODULES: tuple[tuple[ApiModuleId, str, tuple[ApiRouteSpec, ...]], ...] = (
         "音色：训练、资产、市场、授权、支付",
         (
             ApiRouteSpec("voice", "voices", "voices", ("voices", "training", "compliance", "kyc"), "音色与训练"),
+            ApiRouteSpec("voice", "cloud_train", "cloud-gpu", ("cloud_train",), "用户云端 GPU 连接"),
             ApiRouteSpec("voice", "assets", "assets", ("assets",), "素材上传与质检"),
             ApiRouteSpec("voice", "consents", "consents", ("consents",), "授权书"),
             ApiRouteSpec("voice", "catalog", "catalog", ("marketplace",), "音色馆上架"),
+            ApiRouteSpec("voice", "marketplace", "marketplace", ("marketplace",), "邀请制上架"),
             ApiRouteSpec("voice", "licensing", "licensing", ("licensing",), "授权凭证"),
             ApiRouteSpec("voice", "kyc", "kyc", ("kyc",), "实名认证"),
             ApiRouteSpec("voice", "quality", "quality", ("quality",), "相似度评测"),

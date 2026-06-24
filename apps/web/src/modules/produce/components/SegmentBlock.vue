@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import type { ScriptSegment } from "@/modules/produce/types/script";
 import type { VoicePickerItem } from "@/components/VoicePicker.vue";
-import { analyzeEmotion } from "@/api/client";
+import { recommendSynthParams } from "@/api/intelligence";
+import { applySmartSynthToSegment, formatSmartSynthHint } from "@/modules/produce/utils/smartSynth";
 
 const props = defineProps<{
   segment: ScriptSegment;
@@ -17,6 +18,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   update: [segment: ScriptSegment];
   remove: [];
+  paste: [];
 }>();
 
 const sweep = ref(false);
@@ -37,10 +39,20 @@ const sealChar = computed(() => {
 });
 
 const autoEmotionLoading = ref(false);
+const smartHint = ref("");
+const areaRef = ref<HTMLTextAreaElement | null>(null);
+
+function resizeArea() {
+  const el = areaRef.value;
+  if (!el) return;
+  el.style.height = "auto";
+  el.style.height = `${Math.max(96, el.scrollHeight)}px`;
+}
 
 watch(
   () => props.segment.text,
   () => {
+    void nextTick(resizeArea);
     sweep.value = false;
     void requestAnimationFrame(() => {
       sweep.value = true;
@@ -51,6 +63,15 @@ watch(
     });
   },
 );
+
+onMounted(() => {
+  void nextTick(resizeArea);
+});
+
+function onTextInput(e: Event) {
+  patch({ text: (e.target as HTMLTextAreaElement).value });
+  resizeArea();
+}
 
 function patch(partial: Partial<ScriptSegment>) {
   emit("update", { ...props.segment, ...partial });
@@ -100,11 +121,16 @@ async function autoDetectEmotion() {
   const text = props.segment.text.trim();
   if (!text) return;
   autoEmotionLoading.value = true;
+  smartHint.value = "";
   try {
-    const result = await analyzeEmotion(text);
-    patch({ emotion: result.emotion, emotionStrength: result.strength });
+    const resp = await recommendSynthParams({
+      text,
+      character_hint: props.segment.characterName,
+    });
+    patch(applySmartSynthToSegment(props.segment, resp.result));
+    smartHint.value = formatSmartSynthHint(resp.result, resp.mode);
   } catch {
-    // silently fail for per-segment auto-detect
+    smartHint.value = "智能分析暂不可用，请稍后重试";
   } finally {
     autoEmotionLoading.value = false;
   }
@@ -137,6 +163,7 @@ async function autoDetectEmotion() {
       </div>
       <div class="seg-block__meta">
         <span class="rack-label seg-block__role">{{ segment.characterName ?? `段落 ${index + 1}` }}</span>
+        <span class="seg-block__chars">{{ segment.text.length }} 字</span>
         <select
           class="seg-block__voice seg-block__voice--ghost"
           :value="segment.voiceVersionId"
@@ -163,13 +190,15 @@ async function autoDetectEmotion() {
     </header>
 
     <textarea
+      ref="areaRef"
       :value="segment.text"
       class="seg-block__area"
       :style="{ letterSpacing }"
-      rows="3"
+      rows="1"
       placeholder="该段台词…拖入左侧木印或在此书写"
       :disabled="disabled"
-      @input="patch({ text: ($event.target as HTMLTextAreaElement).value })"
+      @input="onTextInput"
+      @paste="emit('paste')"
     />
 
     <div class="seg-block__tune seg-block__tune--fine">
@@ -217,12 +246,13 @@ async function autoDetectEmotion() {
           type="button"
           class="seg-fine-auto-btn"
           :disabled="disabled || autoEmotionLoading || !segment.text.trim()"
-          :title="segment.text.trim() ? '根据本段文本自动识别情感' : '请先输入台词'"
+          :title="smartHint || (segment.text.trim() ? 'AI 语义分析本段台词，推荐情感与韵律' : '请先输入台词')"
           @click="autoDetectEmotion"
         >
-          {{ autoEmotionLoading ? "…" : "自动" }}
+          {{ autoEmotionLoading ? "分析中" : "智能" }}
         </button>
       </label>
+      <p v-if="smartHint" class="seg-block__smart-hint">{{ smartHint }}</p>
       <label class="seg-fine-line">
         <span>音调</span>
         <input
@@ -269,6 +299,17 @@ async function autoDetectEmotion() {
 .seg-block__meta {
   flex: 1;
   min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.seg-block__chars {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: rgb(107 101 96 / 0.55);
+  letter-spacing: 0.04em;
 }
 
 .seg-block__head-actions {
@@ -295,6 +336,7 @@ async function autoDetectEmotion() {
 
 .seg-block__voice--ghost {
   width: 100%;
+  flex-basis: 100%;
   margin-top: 4px;
   border: none;
   border-bottom: 1px solid rgb(31 28 25 / 0.1);
@@ -425,5 +467,13 @@ async function autoDetectEmotion() {
 .seg-fine-auto-btn:disabled {
   opacity: 0.35;
   cursor: not-allowed;
+}
+
+.seg-block__smart-hint {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: rgb(138 90 36 / 0.9);
 }
 </style>

@@ -41,6 +41,9 @@ class TrainingService:
         voice_asset_id: UUID | None,
         consent_id: UUID | None,
         model_tag: str,
+        train_backend: str | None = None,
+        cloud_local_dataset_prep: bool | None = None,
+        cloud_use_asr: bool | None = None,
     ) -> tuple[TrainPayload | None, bool, bool, bool, bool]:
         owns = self._voices.user_owns_voice(voice_id, owner_user_id)
 
@@ -67,6 +70,12 @@ class TrainingService:
             ref_text = asset.qc_result_json.get("ref_text")
             if ref_text:
                 hyperparams["ref_text"] = ref_text
+        if train_backend and train_backend.strip():
+            hyperparams["train_backend"] = train_backend.strip().lower()
+        if cloud_local_dataset_prep is not None:
+            hyperparams["cloud_local_dataset_prep"] = cloud_local_dataset_prep
+        if cloud_use_asr is not None:
+            hyperparams["cloud_use_asr"] = cloud_use_asr
 
         payload = TrainPayload(
             voice_id=voice_id,

@@ -3,6 +3,10 @@
 | 文件 | 时长 | 参考文本 |
 |------|------|----------|
 | `ref_zh_zero_shot.wav` | ~6.8 秒 | 大家好，我是测试用户，今天我们来测试一下语音合成功能。 |
+| `bilibili_BV1AcLQzBEGF_vocal.wav` | ~3 分钟 | 完整 B 站下载（快速克隆请用 9s 片段） |
+| `keyword_vocal_9s.wav` | 9 秒 | 好好爱自己…（见 `keyword_vocal_9s_ref.txt`） |
+
+9 秒干声：`python scripts/prep_studio_dry_vocal_clip.py --copy-public`
 
 ## 用法
 

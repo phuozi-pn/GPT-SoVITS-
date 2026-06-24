@@ -10,7 +10,9 @@ from sqlalchemy.orm import Session
 from domains.compliance.export import apply_compliance_label
 from voice_platform.audio_util import concat_wav, pitch_shift_wav
 from voice_platform.config import get_settings
-from voice_platform.engine.paths import host_path_to_container, weights_path_for_api
+from voice_platform.engine.infer_weights import read_v2pro_base_weights, resolve_synthesis_weights
+from voice_platform.engine.ref_audio import resolve_engine_ref_container
+from voice_platform.engine.paths import host_path_to_container
 from voice_platform.job.models import VoiceVersionRow
 from voice_platform.job.repository import JobRepository, VoiceCatalogRepository
 from voice_platform.job.schemas import InferPayload, InferSegment
@@ -37,12 +39,8 @@ class EngineAdapter:
 
     def synthesize(self, ctx: InferContext) -> bytes:
         meta = ctx.voice.metadata_json or {}
-        ref_path = meta.get("engine_ref_audio_path") or ctx.voice.ref_audio_uri
+        ref_path = resolve_engine_ref_container(ctx.voice)
         ref_text = ctx.voice.ref_text or meta.get("ref_text", "")
-        if not ref_path:
-            raise RuntimeError("VoiceVersion missing engine_ref_audio_path / ref_audio_uri")
-
-        ref_path = host_path_to_container(ref_path)
 
         body = {
             "text": ctx.payload.text,
@@ -82,10 +80,14 @@ class EngineAdapter:
     def _ensure_weights(self, client: httpx.Client, meta: dict) -> None:
         if meta.get("mock"):
             return
-        gpt_w, sovits_w = weights_path_for_api(meta)
-        if not gpt_w or not sovits_w:
-            logger.warning("VoiceVersion missing fine-tuned weights; using api_v2 defaults")
-            return
+        pair = resolve_synthesis_weights(meta)
+        if not pair:
+            raise RuntimeError(
+                "Cannot resolve engine weights for synthesis. "
+                "Quick clone needs v2Pro base weights: set ENGINE_TRAIN_ROOT "
+                "or ENGINE_DEFAULT_GPT_WEIGHTS + ENGINE_DEFAULT_SOVITS_WEIGHTS in .env"
+            )
+        gpt_w, sovits_w = pair
         for endpoint, weights in (
             ("set_gpt_weights", gpt_w),
             ("set_sovits_weights", sovits_w),
@@ -212,6 +214,33 @@ class InferWorker(BaseWorker):
     def process(self, *, job_id: UUID, session: Session, record) -> dict:
         assert self._adapter is not None
         payload = InferPayload.model_validate(record.payload)
+        try:
+            return self._process_infer(job_id=job_id, session=session, record=record, payload=payload)
+        except Exception as exc:
+            if payload.source_api_key_id:
+                from voice_platform.developer.webhook import dispatch_open_api_job_webhook
+
+                dispatch_open_api_job_webhook(
+                    session,
+                    api_key_id=payload.source_api_key_id,
+                    job_id=job_id,
+                    status="failed",
+                    error_message=str(exc),
+                )
+                from voice_platform.developer.webhook import retry_due_open_api_webhooks
+
+                retry_due_open_api_webhooks(session)
+            raise
+
+    def _process_infer(
+        self,
+        *,
+        job_id: UUID,
+        session: Session,
+        record,
+        payload: InferPayload,
+    ) -> dict:
+        assert self._adapter is not None
         logger.info(
             "synthesize start job_id=%s trace_id=%s",
             job_id,
@@ -268,6 +297,33 @@ class InferWorker(BaseWorker):
             "watermark_embedded": bool(label_meta.get("watermark_embedded")),
         }
 
+        if settings.fingerprint_auto_enroll and label_meta.get("export_compliant"):
+            try:
+                from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+
+                from domains.fingerprint.service import FingerprintService
+
+                def _enroll():
+                    return FingerprintService(session).enroll_audio(
+                        wav_bytes=audio_bytes,
+                        job_id=job_id,
+                        user_id=record.owner_user_id,
+                        voice_id=payload.voice_version_id,
+                        storage_url=result["audio_url"],
+                    )
+
+                with ThreadPoolExecutor(max_workers=1) as pool:
+                    fut = pool.submit(_enroll)
+                    try:
+                        fp = fut.result(timeout=12.0)
+                        result["fingerprint_id"] = str(fp.fingerprint_id)
+                    except FutureTimeoutError:
+                        logger.warning(
+                            "fingerprint enroll skipped (timeout) job_id=%s", job_id
+                        )
+            except Exception:
+                logger.exception("fingerprint enroll failed job_id=%s", job_id)
+
         if payload.catalog_id:
             VoiceCatalogRepository(session).set_demo_audio(
                 payload.catalog_id,
@@ -290,6 +346,19 @@ class InferWorker(BaseWorker):
             logger.info("catalog demo job_id=%s skip_quota=1", job_id)
 
         logger.info("synthesize succeeded job_id=%s duration=%.2fs", job_id, duration)
+        if payload.source_api_key_id:
+            from voice_platform.developer.webhook import dispatch_open_api_job_webhook
+
+            dispatch_open_api_job_webhook(
+                session,
+                api_key_id=payload.source_api_key_id,
+                job_id=job_id,
+                status="succeeded",
+                result=result,
+            )
+        from voice_platform.developer.webhook import retry_due_open_api_webhooks
+
+        retry_due_open_api_webhooks(session)
         return result
 
 

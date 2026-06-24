@@ -167,6 +167,35 @@ export async function fetchQuota() {
   return apiJson<QuotaSummary>("/api/v1/usage/quota");
 }
 
+export interface PlatformCapabilities {
+  train_mode: string;
+  train_mode_label: string;
+  engine_mock: boolean;
+  engine_tts_url: string;
+  train_mock: boolean;
+  kyc_required: boolean;
+  kyc_mock: boolean;
+  asr_enabled: boolean;
+  asr_available: boolean;
+  cloud_train_configured: boolean;
+  cloud_train_available: boolean;
+  cloud_train_issues: string[];
+  engine_train_root_ready: boolean;
+  weight_import_available: boolean;
+  quick_clone_available: boolean;
+  cloud_train_self_service: boolean;
+  cloud_train_user_connected: boolean;
+  cloud_train_local_dataset_prep_default: boolean;
+  cloud_train_use_asr_default: boolean;
+  cloud_train_gpt_epochs: number;
+  cloud_train_sovits_epochs: number;
+  cloud_train_epoch_label: string;
+}
+
+export async function fetchPlatformCapabilities() {
+  return apiJson<PlatformCapabilities>("/api/v1/platform/capabilities");
+}
+
 export async function createVoice(name: string) {
   return apiJson<{ voice_id: string; name: string }>("/api/v1/voices", {
     method: "POST",
@@ -181,15 +210,21 @@ export async function createConsent(voiceId: string) {
   });
 }
 
-export async function uploadAsset(voiceId: string, refText: string, file: File) {
+export async function uploadAsset(voiceId: string, file: File, refText?: string) {
   const form = new FormData();
   form.append("voice_id", voiceId);
-  form.append("ref_text", refText);
+  if (refText?.trim()) form.append("ref_text", refText.trim());
   form.append("audio_file", file);
-  return apiJson<{ asset_id: string; qc_passed: boolean; qc_result?: { issues?: { message: string }[] } }>(
-    "/api/v1/voices/assets",
-    { method: "POST", body: form },
-  );
+  return apiJson<{
+    asset_id: string;
+    qc_passed: boolean;
+    qc_result?: {
+      ref_text?: string | null;
+      ref_text_auto?: boolean;
+      asr_provider?: string | null;
+      issues?: { code?: string; message: string }[];
+    };
+  }>("/api/v1/voices/assets", { method: "POST", body: form });
 }
 
 export async function confirmAsset(assetId: string) {
@@ -199,13 +234,67 @@ export async function confirmAsset(assetId: string) {
   );
 }
 
-export async function startTrain(voiceId: string, voiceAssetId: string) {
+export async function startTrain(
+  voiceId: string,
+  voiceAssetId: string,
+  opts?: {
+    trainBackend?: "auto" | "quick" | "engine" | "cloud";
+    cloudLocalDatasetPrep?: boolean;
+    cloudUseAsr?: boolean;
+  },
+) {
   return apiJson<{ job_id: string; status: string }>(`/api/v1/voices/${voiceId}/train`, {
     method: "POST",
     body: JSON.stringify({
       voice_asset_id: voiceAssetId,
       model_tag: "gsv-v2pro-20250606",
+      ...(opts?.trainBackend && opts.trainBackend !== "auto"
+        ? { train_backend: opts.trainBackend }
+        : {}),
+      ...(opts?.trainBackend === "cloud" && opts.cloudLocalDatasetPrep !== undefined
+        ? { cloud_local_dataset_prep: opts.cloudLocalDatasetPrep }
+        : {}),
+      ...(opts?.trainBackend === "cloud" && opts.cloudUseAsr !== undefined
+        ? { cloud_use_asr: opts.cloudUseAsr }
+        : {}),
     }),
+  });
+}
+
+export interface ImportWeightsUploadOpts {
+  voiceName: string;
+  refText: string;
+  voiceId?: string;
+  label?: string;
+  consentId?: string;
+  voiceAssetId?: string;
+}
+
+export async function importEngineWeightsUpload(
+  gpt: File,
+  sovits: File,
+  refAudio: File,
+  opts: ImportWeightsUploadOpts,
+) {
+  const form = new FormData();
+  form.append("gpt_weights", gpt);
+  form.append("sovits_weights", sovits);
+  form.append("ref_audio", refAudio);
+  form.append("voice_name", opts.voiceName);
+  form.append("ref_text", opts.refText);
+  if (opts.voiceId) form.append("voice_id", opts.voiceId);
+  if (opts.label) form.append("label", opts.label);
+  if (opts.consentId) form.append("consent_id", opts.consentId);
+  if (opts.voiceAssetId) form.append("voice_asset_id", opts.voiceAssetId);
+  return apiJson<{
+    voice_version_id: string;
+    voice_id: string;
+    voice_name: string;
+    version: number;
+    imported?: boolean;
+  }>("/api/v1/voices/import-weights/upload", {
+    method: "POST",
+    body: form,
   });
 }
 

@@ -10,6 +10,7 @@ export interface VoiceVersionSummary {
   ref_text?: string | null;
   imported?: boolean;
   granted?: boolean;
+  synth_ready?: boolean;
   created_at?: string | null;
 }
 

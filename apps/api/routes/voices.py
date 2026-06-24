@@ -8,7 +8,8 @@ from domains.compliance.gateway import ComplianceError, ComplianceGateway
 from domains.kyc.service import KycService, KycServiceError
 from domains.quota.service import QuotaService, QuotaServiceError
 from domains.training.service import TrainingService
-from fastapi import APIRouter, Depends, HTTPException
+from domains.training.validate import TrainingServiceError, validate_train_backend
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 from domains.voices.service import VoiceService, VoiceServiceError
 from domains.voices.import_service import EngineWeightsImportService, ImportServiceError
@@ -116,6 +117,37 @@ def import_engine_weights(
         raise_domain_http(exc)
 
 
+@router.post("/voices/import-weights/upload", response_model=VoiceVersionSummary, status_code=201)
+async def import_engine_weights_upload(
+    gpt_weights: UploadFile = File(...),
+    sovits_weights: UploadFile = File(...),
+    ref_audio: UploadFile = File(...),
+    voice_name: str = Form(default="导入音色"),
+    ref_text: str = Form(...),
+    voice_id: UUID | None = Form(default=None),
+    label: str = Form(default=""),
+    consent_id: UUID | None = Form(default=None),
+    voice_asset_id: UUID | None = Form(default=None),
+    user_id: UUID = Depends(get_current_user_id),
+    session: Session = Depends(get_session),
+) -> VoiceVersionSummary:
+    try:
+        return EngineWeightsImportService(session).import_uploaded_files(
+            owner_user_id=user_id,
+            voice_name=voice_name,
+            ref_text=ref_text,
+            gpt_bytes=await gpt_weights.read(),
+            sovits_bytes=await sovits_weights.read(),
+            ref_bytes=await ref_audio.read(),
+            voice_id=voice_id,
+            label=label,
+            consent_id=consent_id,
+            voice_asset_id=voice_asset_id,
+        )
+    except ImportServiceError as exc:
+        raise_domain_http(exc)
+
+
 @router.post("/voices", response_model=VoiceCreateResponse, status_code=201)
 def create_voice(
     body: VoiceCreateRequest,
@@ -142,6 +174,11 @@ def create_train_job(
     except KycServiceError as exc:
         raise_domain_http(exc)
 
+    try:
+        validate_train_backend(body.train_backend, session=session, user_id=user_id)
+    except TrainingServiceError as exc:
+        raise_domain_http(exc)
+
     service = TrainingService(session)
     payload, owns, consent_ok, asset_locked, asset_qc = service.resolve_train_inputs(
         voice_id=voice_id,
@@ -149,6 +186,9 @@ def create_train_job(
         voice_asset_id=body.voice_asset_id,
         consent_id=body.consent_id,
         model_tag=body.model_tag,
+        train_backend=body.train_backend,
+        cloud_local_dataset_prep=body.cloud_local_dataset_prep,
+        cloud_use_asr=body.cloud_use_asr,
     )
     try:
         _gateway.validate_train(

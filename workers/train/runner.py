@@ -5,57 +5,24 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from voice_platform.config import get_db_session, get_settings
-from voice_platform.job.repository import JobRepository, VoiceVersionRepository
-from voice_platform.job.schemas import MODEL_TAG_V2PRO, TrainPayload
+from voice_platform.job.schemas import TrainPayload
 from voice_platform.quota.repository import QuotaRepository
 from workers.base import BaseWorker
-from workers.train.engine_adapter import EngineTrainAdapter
+from workers.train.mode import build_train_adapter, resolve_train_mode
 
 logger = logging.getLogger(__name__)
 
 
-class MockTrainAdapter:
-    """Creates VoiceVersion with placeholder checkpoint (no GPU fine-tune)."""
-
-    def run(self, *, payload: TrainPayload, owner_user_id: UUID, job_id: UUID) -> dict:
-        session = get_db_session()
-        try:
-            versions = VoiceVersionRepository(session)
-            row = versions.create_version(
-                voice_id=payload.voice_id,
-                owner_user_id=owner_user_id,
-                model_tag=payload.model_tag,
-                checkpoint_uri=f"local://checkpoints/{payload.voice_id}/mock-{job_id}.ckpt",
-                ref_audio_uri=payload.asset_urls[0] if payload.asset_urls else None,
-                metadata={
-                    "train_job_id": str(job_id),
-                    "mock": True,
-                    "voice_asset_id": str(payload.voice_asset_id),
-                    "consent_id": str(payload.consent_id),
-                },
-            )
-            return {
-                "voice_version_id": str(row.id),
-                "checkpoint_uri": row.checkpoint_uri,
-                "model_tag": row.model_tag or MODEL_TAG_V2PRO,
-                "version": row.version,
-            }
-        finally:
-            session.close()
-
-
 def _resolve_mock(use_mock: bool | None) -> bool:
-    if use_mock is not None:
-        return use_mock
-    import os
+    return resolve_train_mode(use_mock=use_mock) == "mock"
 
-    env_val = os.environ.get("TRAIN_MOCK", "").lower()
-    if env_val in ("true", "1", "yes"):
-        return True
-    if env_val in ("false", "0", "no"):
-        return False
-    return get_settings().train_mock
+
+def _job_train_mode(record) -> str:
+    if not record or not record.payload:
+        return "mock"
+    payload = TrainPayload.model_validate(record.payload)
+    _, mode = build_train_adapter(hyperparams=payload.hyperparams)
+    return mode
 
 
 class TrainWorker(BaseWorker):
@@ -64,7 +31,8 @@ class TrainWorker(BaseWorker):
     def __init__(self, *, use_mock: bool | None = None) -> None:
         super().__init__()
         self._mock = use_mock
-        self._adapter: MockTrainAdapter | EngineTrainAdapter | None = None
+        self._adapter = None
+        self._train_mode = "mock"
 
     def worker_name(self) -> str:
         return "Train"
@@ -75,19 +43,30 @@ class TrainWorker(BaseWorker):
     def use_mock(self) -> bool:
         return _resolve_mock(self._mock)
 
+    def requires_gpu_for_job(self, record) -> bool | None:
+        mode = _job_train_mode(record)
+        if mode in ("mock", "quick", "cloud"):
+            return False
+        if mode == "engine":
+            return True
+        return None
+
     def prepare(self, session: Session) -> None:
-        self._adapter = MockTrainAdapter() if self.use_mock() else EngineTrainAdapter()
+        self._adapter, self._train_mode = build_train_adapter(use_mock=self._mock)
 
     def process(self, *, job_id: UUID, session: Session, record) -> dict:
-        assert self._adapter is not None
         payload = TrainPayload.model_validate(record.payload)
+        adapter, train_mode = build_train_adapter(
+            use_mock=self._mock,
+            hyperparams=payload.hyperparams,
+        )
         logger.info(
-            "train start job_id=%s trace_id=%s mock=%s",
+            "train start job_id=%s trace_id=%s mode=%s",
             job_id,
             record.trace_id,
-            self.use_mock(),
+            train_mode,
         )
-        result = self._adapter.run(
+        result = adapter.run(
             payload=payload,
             owner_user_id=record.owner_user_id,
             job_id=job_id,
@@ -102,9 +81,9 @@ class TrainWorker(BaseWorker):
 
             QualityService(session).evaluate_after_train(UUID(vv_id))
         logger.info(
-            "train succeeded job_id=%s mock=%s voice_version_id=%s",
+            "train succeeded job_id=%s mode=%s voice_version_id=%s",
             job_id,
-            self.use_mock(),
+            train_mode,
             result.get("voice_version_id"),
         )
         return result

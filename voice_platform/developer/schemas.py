@@ -25,8 +25,14 @@ class ApiKeySummary(BaseModel):
     key_prefix: str
     scopes: list[str]
     revoked: bool
+    webhook_url: str | None = None
     last_used_at: datetime | None = None
     created_at: datetime | None = None
+
+
+class ApiKeyWebhookUpdateRequest(BaseModel):
+    webhook_url: str | None = Field(default=None, max_length=2000)
+    webhook_secret: str | None = Field(default=None, max_length=128)
 
 
 class OpenSynthesisRequest(BaseModel):

@@ -28,6 +28,7 @@ GPT/                          # 仓库根 — 见 ../README.md
 | 用例图、功能结构图 | [requirements/diagrams/](./requirements/diagrams/) | PlantUML |
 | 立项 / 计划 / 需求分析（模板体例） | [pm/](./pm/) | Markdown → 同步至 Word 模板 |
 | 正式 Word 空白/填报模板 | [templates/word/](./templates/word/) | `.doc` |
+| **实训交付物包（01–07）** | [../deliverables/](../deliverables/) | 学校目录结构 `.doc` |
 | 本地 Word 导出（不提交 Git） | [pm/exports/](./pm/exports/) | `.docx` 等 |
 
 ## 快速链接

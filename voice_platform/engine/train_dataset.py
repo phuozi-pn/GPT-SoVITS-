@@ -47,6 +47,34 @@ def filter_pairs_by_duration(
     return kept
 
 
+ENGINE_REF_MIN_SEC = 3.0
+ENGINE_REF_MAX_SEC = 10.0
+
+
+def ensure_engine_ref_wav(
+    src: Path,
+    dst: Path,
+    *,
+    min_sec: float = ENGINE_REF_MIN_SEC,
+    max_sec: float = ENGINE_REF_MAX_SEC,
+) -> Path:
+    """Copy or trim ref audio into api_v2's 3–10s window."""
+    import shutil
+
+    dur = wav_duration_sec(src)
+    if dur < min_sec:
+        raise RuntimeError(
+            f"Reference audio {dur:.1f}s shorter than engine minimum {min_sec:.0f}s"
+        )
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    if dur <= max_sec:
+        if src.resolve() != dst.resolve():
+            shutil.copy2(src, dst)
+        return dst
+    trim_wav_copy(src, dst, max_sec=max_sec - 1.0)
+    return dst
+
+
 def trim_wav_copy(src: Path, dst: Path, *, max_sec: float = 9.0) -> Path:
     """Copy first max_sec of wav to dst (for api_v2 ref 3–10s constraint)."""
     with wave.open(str(src), "rb") as wf:

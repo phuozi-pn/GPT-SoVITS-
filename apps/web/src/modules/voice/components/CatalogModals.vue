@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { LICENSE_TYPES, type Authorization, type CatalogEntry, type VoiceGrant, type VoiceSummary } from "@/api/catalog";
+import type { PublishEligibility, SellerAuthorizationStats } from "@/api/marketplace";
 import type { SellerWallet } from "@/api/settlement";
 import type { VoiceVersionSummary } from "@/api/library";
 import AppModal from "@/components/AppModal.vue";
@@ -16,6 +17,7 @@ defineProps<{
   myAuthorizations: Authorization[];
   issuedAuthorizations: Authorization[];
   sellerWallet: SellerWallet | null;
+  sellerStats: SellerAuthorizationStats | null;
   myVoices: VoiceSummary[];
   issuedGrants: VoiceGrant[];
   receivedGrants: VoiceGrant[];
@@ -33,6 +35,10 @@ defineProps<{
   grantVoiceId: string;
   granteeUserId: string;
   checkoutSummary: CheckoutSummary | null;
+  publishEligibility: PublishEligibility | null;
+  inviteCode: string;
+  waitlistContact: string;
+  waitlistNote: string;
   versionOptionLabel: (v: VoiceVersionSummary) => string;
   devUserPresets: ReadonlyArray<{ readonly id: string; readonly label: string }>;
   prohibitedDomainOptions: readonly string[];
@@ -47,6 +53,8 @@ const emit = defineEmits<{
   revokeGrant: [grantId: string];
   approve: [catalogId: string];
   reject: [catalogId: string];
+  redeemInvite: [];
+  joinWaitlist: [];
   exportCertificate: [authId: string];
   toggleProhibited: [domain: string];
   dismissCheckout: [];
@@ -63,19 +71,62 @@ const emit = defineEmits<{
   "update:complaintText": [v: string];
   "update:grantVoiceId": [v: string];
   "update:granteeUserId": [v: string];
+  "update:inviteCode": [v: string];
+  "update:waitlistContact": [v: string];
+  "update:waitlistNote": [v: string];
   goLibrary: [];
 }>();
 </script>
 
 <template>
   <AppModal :open="activeModal === 'publish'" label="发布" title="发布到音色馆" wide @close="emit('close')">
-    <p class="hint modal-hint">仅音色所有者可发布；通过后所有用户可试听合成。</p>
+    <p class="hint modal-hint">仅音色所有者可发布；需邀请码 + 相似度测评通过（quality_pass）。</p>
+    <div
+      v-if="publishEligibility && !publishEligibility.can_publish"
+      class="invite-gate"
+    >
+      <p class="hint warn">{{ publishEligibility.message }}</p>
+      <div class="form-grid">
+        <label class="span-2">
+          邀请码
+          <input
+            :value="inviteCode"
+            placeholder="例如 PHONIA-CREATOR"
+            @input="emit('update:inviteCode', ($event.target as HTMLInputElement).value)"
+          />
+        </label>
+        <div class="span-2 row-actions">
+          <button class="btn btn--primary btn--sm" type="button" @click="emit('redeemInvite')">兑换邀请码</button>
+        </div>
+        <label>
+          联系方式（候补）
+          <input
+            :value="waitlistContact"
+            placeholder="手机 / 微信"
+            @input="emit('update:waitlistContact', ($event.target as HTMLInputElement).value)"
+          />
+        </label>
+        <label>
+          备注
+          <input
+            :value="waitlistNote"
+            placeholder="配音师简介 / 作品链接"
+            @input="emit('update:waitlistNote', ($event.target as HTMLInputElement).value)"
+          />
+        </label>
+        <div class="span-2">
+          <button class="btn btn--ghost btn--sm" type="button" @click="emit('joinWaitlist')">
+            {{ publishEligibility.on_waitlist ? "更新候补信息" : "加入候补名单" }}
+          </button>
+        </div>
+      </div>
+    </div>
     <p v-if="!ownedVersions.length && !loading" class="hint warn">
       暂无可用版本。请先到
       <router-link to="/library">音色库</router-link>
       导入 cloud-004 权重后再发布。
     </p>
-    <div v-else class="form-grid">
+    <div v-else-if="publishEligibility?.can_publish !== false" class="form-grid">
       <label class="span-2">
         我的版本
         <select :value="publishVersionId" @change="emit('update:publishVersionId', ($event.target as HTMLSelectElement).value)">
@@ -167,7 +218,7 @@ const emit = defineEmits<{
       <button
         class="btn btn--primary btn--sm"
         type="button"
-        :disabled="loading || !publishVersionId || !ownedVersions.length"
+        :disabled="loading || !publishVersionId || !ownedVersions.length || publishEligibility?.can_publish === false"
         @click="emit('publish')"
       >
         发布到音色馆
@@ -187,7 +238,15 @@ const emit = defineEmits<{
     <p class="hint modal-hint">当前以调试用户 C（运营）身份登录。请先在右上角切换用户。</p>
     <ul v-if="pendingReview.length" class="grant-list">
       <li v-for="p in pendingReview" :key="p.catalog_id">
-        <span>{{ p.title }} · {{ p.voice_name }}</span>
+        <span>
+          {{ p.title }} · {{ p.voice_name }}
+          <template v-if="p.similarity_score != null">
+            · 相似度 {{ (p.similarity_score * 100).toFixed(1) }}%
+          </template>
+          <template v-if="p.quality_pass != null">
+            · {{ p.quality_pass ? "测评通过" : "测评未达标" }}
+          </template>
+        </span>
         <span class="row-actions">
           <button class="btn btn--primary btn--sm" @click="emit('approve', p.catalog_id)">通过</button>
           <span class="row-actions__sep" aria-hidden="true">·</span>
@@ -220,6 +279,11 @@ const emit = defineEmits<{
     title="卖家钱包"
     @close="emit('close')"
   >
+    <p v-if="sellerStats" class="hint modal-hint">
+      授权统计：成交 {{ sellerStats.total_sales }} 笔 · 有效授权 {{ sellerStats.active_authorizations }} ·
+      已用 {{ sellerStats.total_chars_used.toLocaleString() }} /
+      {{ sellerStats.total_chars_quota.toLocaleString() }} 字
+    </p>
     <p class="hint modal-hint">
       可提现 ¥{{ (sellerWallet.balance_cents / 100).toFixed(2) }} · 待打款 ¥{{
         (sellerWallet.pending_payout_cents / 100).toFixed(2)
@@ -341,32 +405,75 @@ const emit = defineEmits<{
   <AppModal
     :open="activeModal === 'checkout' && !!checkoutSummary"
     label="支付"
-    title="购买成功"
+    :title="checkoutSummary?.status === 'pending' ? '扫码支付' : '购买成功'"
     @close="emit('dismissCheckout')"
   >
     <template v-if="checkoutSummary">
       <p class="checkout-status">
         <strong>{{ checkoutSummary.voiceTitle }}</strong>
-        <span class="pill pill--ok">已授权</span>
+        <span
+          class="pill"
+          :class="checkoutSummary.status === 'paid' ? 'pill--ok' : 'pill--warn'"
+        >
+          {{ checkoutSummary.status === 'paid' ? '已授权' : '待支付' }}
+        </span>
       </p>
       <dl class="checkout-dl">
         <div><dt>金额</dt><dd>{{ checkoutSummary.priceLabel }}</dd></div>
         <div><dt>订单号</dt><dd class="mono">{{ checkoutSummary.orderRef }}</dd></div>
+        <div v-if="checkoutSummary.provider">
+          <dt>渠道</dt>
+          <dd>{{ checkoutSummary.provider }}</dd>
+        </div>
         <div v-if="checkoutSummary.authorizationId">
           <dt>授权 ID</dt>
           <dd class="mono">{{ checkoutSummary.authorizationId }}</dd>
         </div>
       </dl>
-      <p class="hint">Mock 支付已自动确认。你现在可以试听合成、导出 PDF 或在线验真。</p>
-      <p v-if="checkoutSummary.authorizationId" class="row-actions checkout-links">
-        <router-link class="text-action text-action--accent" :to="`/verify/${checkoutSummary.authorizationId}`">
-          授权验真
-        </router-link>
-      </p>
+
+      <template v-if="checkoutSummary.status === 'pending' && checkoutSummary.qrCodeUrl">
+        <p class="hint">请使用支付宝沙箱 App 扫描下方二维码完成付款。支付成功后本页将自动刷新。</p>
+        <div class="checkout-qr">
+          <img
+            :src="`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(checkoutSummary.qrCodeUrl)}`"
+            alt="支付宝付款码"
+            width="220"
+            height="220"
+          />
+        </div>
+        <p class="row-actions checkout-links">
+          <a
+            class="text-action text-action--accent"
+            :href="checkoutSummary.qrCodeUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            在浏览器打开付款链接
+          </a>
+        </p>
+      </template>
+      <template v-else-if="checkoutSummary.status === 'pending'">
+        <p class="hint">订单已创建，等待支付确认…</p>
+      </template>
+      <template v-else>
+        <p class="hint">支付已确认。你现在可以试听合成、导出 PDF 或在线验真。</p>
+        <p v-if="checkoutSummary.authorizationId" class="row-actions checkout-links">
+          <router-link class="text-action text-action--accent" :to="`/verify/${checkoutSummary.authorizationId}`">
+            授权验真
+          </router-link>
+        </p>
+      </template>
     </template>
     <template #footer>
       <button class="btn btn--ghost btn--sm" type="button" @click="emit('dismissCheckout')">关闭</button>
-      <button class="btn btn--primary btn--sm" type="button" @click="emit('goSynthAfterCheckout')">立即试听合成</button>
+      <button
+        v-if="checkoutSummary?.status === 'paid'"
+        class="btn btn--primary btn--sm"
+        type="button"
+        @click="emit('goSynthAfterCheckout')"
+      >
+        立即试听合成
+      </button>
     </template>
   </AppModal>
 </template>
@@ -408,5 +515,14 @@ const emit = defineEmits<{
 
 .checkout-links {
   margin: 0 0 4px;
+}
+
+.checkout-qr {
+  display: flex;
+  justify-content: center;
+  margin: 12px 0;
+  padding: 12px;
+  background: #fff;
+  border-radius: 8px;
 }
 </style>

@@ -18,6 +18,7 @@ from voice_platform.job.schemas import (
     ComplaintResponse,
     PaymentOrderResponse,
 )
+from voice_platform.marketplace.schemas import SellerAuthorizationStatsResponse
 
 router = APIRouter()
 
@@ -69,6 +70,14 @@ def list_issued_authorizations(
     session: Session = Depends(get_session),
 ) -> list[AuthorizationResponse]:
     return LicensingService(session).list_sales(seller_user_id=user_id)
+
+
+@router.get("/seller/authorization-stats", response_model=SellerAuthorizationStatsResponse)
+def seller_authorization_stats(
+    user_id: UUID = Depends(get_current_user_id),
+    session: Session = Depends(get_session),
+) -> SellerAuthorizationStatsResponse:
+    return LicensingService(session).seller_authorization_stats(seller_user_id=user_id)
 
 
 @router.get(

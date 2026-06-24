@@ -75,6 +75,15 @@ function Stop-ExistingPlatform {
 Import-DotEnv (Join-Path $RepoRoot ".env")
 if ($Port -le 0) { $Port = Get-ApiPortFromEnv }
 
+$ensureAsr = Join-Path $RepoRoot "scripts\ensure_asr_deps.py"
+if (Test-Path $ensureAsr) {
+    Write-Host "Checking ASR runtime..."
+    & $Python $ensureAsr
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning "ASR dependency check failed. Upload auto-transcribe may be unavailable; set ASR_MOCK=true to skip."
+    }
+}
+
 if (-not $SkipDocker) {
     $composeDir = Join-Path $RepoRoot "infra\docker"
     Write-Host "Starting PostgreSQL + Redis..."
@@ -170,6 +179,8 @@ if (-not $NoEngineApi) {
             $status = & $engineScript -Action status 2>&1 | Out-String
             if ($status -match "HTTP.*docs -> OK") {
                 Write-Host "Engine api_v2 already up (9880)"
+                Write-Host "  Real user voice: .env -> TRAIN_MOCK=false TRAIN_MODE=quick ENGINE_MOCK=false"
+                Write-Host "  Then restart: .\scripts\platform_stop.ps1; .\scripts\platform_start.ps1 -Background"
             } else {
                 Write-Host "Starting engine api_v2 (9880)..."
                 & $engineScript -Action start | Out-Null

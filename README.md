@@ -21,6 +21,7 @@
 
 ```
 GPT/
+├── deliverables/         实训提交包（01立项–07日常报告，Word）
 ├── docs/                 需求、架构、运维文档
 ├── infra/
 │   ├── docker/           PostgreSQL + Redis + 迁移

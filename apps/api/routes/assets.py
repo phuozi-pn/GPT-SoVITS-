@@ -3,7 +3,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from apps.api.deps import get_current_user_id, get_session
-from domains.assets.qc import AssetQcError
+from domains.assets.errors import AssetQcError
 from domains.assets.service import AssetService
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
@@ -16,6 +16,8 @@ def _raise_asset_error(exc: AssetQcError) -> None:
     """Asset-specific error mapper with custom HTTP status rules."""
     if exc.code in {"FORBIDDEN", "CONSENT_REQUIRED"}:
         status = 403
+    elif exc.code in {"FFMPEG_REQUIRED", "AUDIO_CONVERT_FAILED"}:
+        status = 503
     elif exc.code.startswith("QC_"):
         status = 422
     else:

@@ -1,4 +1,4 @@
-import { computed, ref } from "vue";
+import { computed, onUnmounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { ApiError } from "@/api/client";
 import {
@@ -17,6 +17,7 @@ import {
   PROHIBITED_DOMAIN_OPTIONS,
   publishToCatalog,
   purchaseCatalogWithCheckout,
+  fetchPaymentOrder,
   regenerateCatalogDemo,
   rejectCatalogEntry,
   revokeVoiceGrant,
@@ -32,6 +33,14 @@ import {
   downloadCatalogAsset,
 } from "@/api/social";
 import { fetchSellerWallet, requestSellerPayout, type SellerWallet } from "@/api/settlement";
+import {
+  fetchPublishEligibility,
+  fetchSellerAuthorizationStats,
+  joinMarketplaceWaitlist,
+  redeemMarketplaceInvite,
+  type PublishEligibility,
+  type SellerAuthorizationStats,
+} from "@/api/marketplace";
 import { fetchVoiceVersions, type VoiceVersionSummary } from "@/api/library";
 import { formatApiError } from "@/utils/apiErrors";
 import { parseCatalogTags } from "@/utils/catalogDisplay";
@@ -54,7 +63,12 @@ export type CheckoutSummary = {
   priceLabel: string;
   orderRef: string;
   catalogId: string;
+  orderId?: string;
+  status: "pending" | "paid";
+  provider?: string;
   authorizationId?: string;
+  qrCodeUrl?: string;
+  checkoutUrl?: string;
 };
 
 function pickPreferredVersionId(versions: VoiceVersionSummary[]): string {
@@ -82,6 +96,7 @@ export function useCatalogManage(browse: CatalogBrowse) {
   const myAuthorizations = ref<Authorization[]>([]);
   const issuedAuthorizations = ref<Authorization[]>([]);
   const sellerWallet = ref<SellerWallet | null>(null);
+  const sellerStats = ref<SellerAuthorizationStats | null>(null);
 
   const publishVersionId = ref("");
   const publishTitle = ref("蛊真人·龙宫");
@@ -97,6 +112,12 @@ export function useCatalogManage(browse: CatalogBrowse) {
   const grantVoiceId = ref("");
   const granteeUserId = ref<string>(DEV_USER_PRESETS[1].id);
   const checkoutSummary = ref<CheckoutSummary | null>(null);
+  const publishEligibility = ref<PublishEligibility | null>(null);
+  const inviteCode = ref("");
+  const waitlistContact = ref("");
+  const waitlistNote = ref("");
+
+  let paymentPollTimer: ReturnType<typeof setInterval> | null = null;
 
   const activeModal = ref<CatalogManageModal>("");
 
@@ -109,6 +130,47 @@ export function useCatalogManage(browse: CatalogBrowse) {
 
   function closeModal() {
     activeModal.value = "";
+  }
+
+  async function loadPublishEligibility() {
+    try {
+      publishEligibility.value = await fetchPublishEligibility();
+    } catch {
+      publishEligibility.value = null;
+    }
+  }
+
+  async function onRedeemInvite() {
+    browse.error.value = "";
+    browse.success.value = "";
+    const code = inviteCode.value.trim();
+    if (!code) {
+      browse.error.value = "请输入邀请码";
+      return;
+    }
+    try {
+      const res = await redeemMarketplaceInvite(code);
+      browse.success.value = res.message;
+      inviteCode.value = "";
+      await loadPublishEligibility();
+    } catch (e) {
+      browse.error.value = formatApiError(e);
+    }
+  }
+
+  async function onJoinWaitlist() {
+    browse.error.value = "";
+    browse.success.value = "";
+    try {
+      const res = await joinMarketplaceWaitlist({
+        contact: waitlistContact.value.trim(),
+        note: waitlistNote.value.trim(),
+      });
+      browse.success.value = res.message;
+      await loadPublishEligibility();
+    } catch (e) {
+      browse.error.value = formatApiError(e);
+    }
   }
 
   async function reload() {
@@ -144,8 +206,10 @@ export function useCatalogManage(browse: CatalogBrowse) {
       receivedGrants.value = received;
       try {
         sellerWallet.value = await fetchSellerWallet();
+        sellerStats.value = await fetchSellerAuthorizationStats();
       } catch {
         sellerWallet.value = null;
+        sellerStats.value = null;
       }
       if (!grantVoiceId.value && voices.length) {
         grantVoiceId.value = voices[0].voice_id;
@@ -153,6 +217,7 @@ export function useCatalogManage(browse: CatalogBrowse) {
       if (!publishVersionId.value && ownedVersions.value.length) {
         publishVersionId.value = pickPreferredVersionId(ownedVersions.value);
       }
+      await loadPublishEligibility();
     } catch (e) {
       browse.error.value = formatApiError(e);
     } finally {
@@ -216,6 +281,41 @@ export function useCatalogManage(browse: CatalogBrowse) {
     }
   }
 
+  function stopPaymentPoll() {
+    if (paymentPollTimer) {
+      clearInterval(paymentPollTimer);
+      paymentPollTimer = null;
+    }
+  }
+
+  async function refreshPaymentOrder(orderId: string) {
+    const order = await fetchPaymentOrder(orderId);
+    if (order.status !== "paid" || !checkoutSummary.value) {
+      return;
+    }
+    stopPaymentPoll();
+    checkoutSummary.value = {
+      ...checkoutSummary.value,
+      status: "paid",
+      authorizationId: order.authorization_id ?? undefined,
+      orderRef: order.provider_ref,
+    };
+    browse.success.value = `已购买「${checkoutSummary.value.voiceTitle}」`;
+    await reload();
+  }
+
+  function startPaymentPoll(orderId: string) {
+    stopPaymentPoll();
+    void refreshPaymentOrder(orderId);
+    paymentPollTimer = setInterval(() => {
+      void refreshPaymentOrder(orderId);
+    }, 3000);
+  }
+
+  onUnmounted(() => {
+    stopPaymentPoll();
+  });
+
   async function onPurchaseSelected() {
     const target = browse.selectedEntry.value;
     if (!target) return;
@@ -230,17 +330,30 @@ export function useCatalogManage(browse: CatalogBrowse) {
       const orderRef =
         "provider_ref" in result && result.provider_ref
           ? result.provider_ref
-          : authId ?? ("order_id" in result ? result.order_id : "已授权");
+          : authId ?? ("order_id" in result ? result.order_id : "待支付");
+      const isPaid = result.status === "paid";
       checkoutSummary.value = {
         voiceTitle: target.title,
         priceLabel: `¥${(target.price_cents / 100).toFixed(2)}`,
         orderRef: String(orderRef),
         catalogId: target.catalog_id,
+        orderId: result.order_id,
+        status: isPaid ? "paid" : "pending",
+        provider: result.provider,
         authorizationId: authId,
+        qrCodeUrl: result.qr_code_url ?? undefined,
+        checkoutUrl: result.checkout_url ?? undefined,
       };
-      browse.success.value = `已购买「${target.title}」`;
+      if (isPaid) {
+        browse.success.value = `已购买「${target.title}」`;
+      } else {
+        browse.success.value = "";
+        startPaymentPoll(result.order_id);
+      }
       activeModal.value = "checkout";
-      await reload();
+      if (isPaid) {
+        await reload();
+      }
     } catch (e) {
       browse.error.value = formatApiError(e);
     }
@@ -367,9 +480,14 @@ export function useCatalogManage(browse: CatalogBrowse) {
   async function onReject(catalogId: string) {
     browse.error.value = "";
     browse.success.value = "";
+    const reason = window.prompt("请输入驳回原因（将通知创作者）：", "素材或授权材料不符合要求");
+    if (!reason?.trim()) {
+      browse.error.value = "驳回必须填写原因";
+      return;
+    }
     try {
-      await rejectCatalogEntry(catalogId);
-      browse.success.value = "已驳回";
+      await rejectCatalogEntry(catalogId, reason.trim());
+      browse.success.value = "已驳回并通知创作者";
       await reload();
     } catch (err) {
       browse.error.value = formatApiError(err);
@@ -389,6 +507,7 @@ export function useCatalogManage(browse: CatalogBrowse) {
   }
 
   function dismissCheckout() {
+    stopPaymentPoll();
     checkoutSummary.value = null;
     closeModal();
   }
@@ -429,6 +548,7 @@ export function useCatalogManage(browse: CatalogBrowse) {
     myAuthorizations,
     issuedAuthorizations,
     sellerWallet,
+    sellerStats,
     publishVersionId,
     publishTitle,
     publishDescription,
@@ -443,6 +563,10 @@ export function useCatalogManage(browse: CatalogBrowse) {
     grantVoiceId,
     granteeUserId,
     checkoutSummary,
+    publishEligibility,
+    inviteCode,
+    waitlistContact,
+    waitlistNote,
     activeModal,
     ownedVersions,
     isAdmin,
@@ -463,6 +587,8 @@ export function useCatalogManage(browse: CatalogBrowse) {
     onApprove,
     onReject,
     onRegenerateDemo,
+    onRedeemInvite,
+    onJoinWaitlist,
     dismissCheckout,
     goSynthAfterCheckout,
     maybeAutoPurchase,

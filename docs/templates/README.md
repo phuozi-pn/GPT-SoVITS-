@@ -1,6 +1,7 @@
 # 文档模板
 
-公司标准模板的存放位置，与 `docs/pm/` 下 Markdown 交付物一一对应。
+公司标准模板的存放位置，与 `docs/pm/` 下 Markdown 交付物一一对应。  
+学校提交用完整目录（含 04 设计、06 答辩、07 日常报告）见 [../../deliverables/](../../deliverables/)。
 
 ## Word 正式模板（`.doc`）
 

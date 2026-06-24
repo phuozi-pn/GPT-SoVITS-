@@ -33,7 +33,9 @@ function sealChar(name: string) {
 
 function titleOf(it: FeedItem) {
   if (it.type === "event") return String(it.event.payload.title ?? "未命名音色");
-  return it.post.body.slice(0, 24) + (it.post.body.length > 24 ? "…" : "");
+  const body = it.post.body.trim();
+  if (body.length <= 80) return body;
+  return `${body.slice(0, 80)}…`;
 }
 
 function itemKey(it: FeedItem) {

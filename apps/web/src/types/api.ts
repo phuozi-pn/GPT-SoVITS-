@@ -36,6 +36,14 @@ export interface JobResponse {
   succeeded_count?: number | null;
   failed_count?: number | null;
   zip_url?: string | null;
+  train_gpt_epochs?: number | null;
+  train_sovits_epochs?: number | null;
+  train_elapsed_sec?: number | null;
+  train_dataset_segments?: number | null;
+  train_remote_work_dir?: string | null;
+  train_remote_dataset_path?: string | null;
+  train_progress_phase?: string | null;
+  train_progress_message?: string | null;
 }
 
 // ── 合成 ──────────────────────────────────────────────────
@@ -62,6 +70,7 @@ export type SynthesisBody = {
   top_p?: number;
   emotion?: string | null;
   emotion_strength?: number;
+  project_type?: string | null;
   segments?: SynthesisSegmentBody[];
 };
 

@@ -22,6 +22,8 @@ export interface CatalogEntry {
   prohibited_domains: string[];
   policy_version: number;
   purchased: boolean;
+  quality_pass?: boolean | null;
+  similarity_score?: number | null;
 }
 
 export const LICENSE_TYPES = [
@@ -85,13 +87,28 @@ export type CheckoutResult = {
   provider: string;
   provider_ref: string;
   checkout_url?: string | null;
+  qr_code_url?: string | null;
   authorization_id?: string | null;
+};
+
+export type PaymentOrderStatus = {
+  order_id: string;
+  status: string;
+  amount_cents: number;
+  provider: string;
+  provider_ref: string;
+  authorization_id?: string | null;
+  paid_at?: string | null;
 };
 
 export async function checkoutCatalog(catalogId: string) {
   return apiJson<CheckoutResult>(`/api/v1/catalog/voices/${catalogId}/checkout`, {
     method: "POST",
   });
+}
+
+export async function fetchPaymentOrder(orderId: string) {
+  return apiJson<PaymentOrderStatus>(`/api/v1/payments/orders/${orderId}`);
 }
 
 export async function confirmMockPayment(orderId: string) {
@@ -115,7 +132,7 @@ export async function purchaseCatalogWithCheckout(catalogId: string, priceCents:
     } satisfies CheckoutResult;
   }
   const checkout = await checkoutCatalog(catalogId);
-  if (checkout.status === "pending") {
+  if (checkout.status === "pending" && checkout.provider === "mock") {
     const confirmed = await confirmMockPayment(checkout.order_id);
     return {
       ...checkout,
@@ -249,8 +266,11 @@ export async function approveCatalogEntry(catalogId: string) {
   return apiJson<CatalogEntry>(`/api/v1/catalog/voices/${catalogId}/approve`, { method: "POST" });
 }
 
-export async function rejectCatalogEntry(catalogId: string) {
-  return apiJson<CatalogEntry>(`/api/v1/catalog/voices/${catalogId}/reject`, { method: "POST" });
+export async function rejectCatalogEntry(catalogId: string, reason: string) {
+  return apiJson<CatalogEntry>(`/api/v1/catalog/voices/${catalogId}/reject`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
+  });
 }
 
 export async function publishToCatalog(body: {

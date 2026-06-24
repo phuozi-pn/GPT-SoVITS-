@@ -4,10 +4,12 @@ import wave
 from dataclasses import dataclass
 from pathlib import Path
 
+from domains.assets.convert import CONVERTIBLE_EXTENSIONS, ensure_wav
+from domains.assets.errors import AssetQcError
 from voice_platform.config import get_settings
 from voice_platform.job.schemas import QcIssue, QcResult
 
-_ALLOWED_EXT = {".wav", ".flac", ".mp3"}
+_ALLOWED_EXT = {".wav", *CONVERTIBLE_EXTENSIONS}
 
 
 @dataclass
@@ -15,13 +17,6 @@ class AudioProbe:
     duration_sec: float
     sample_rate: int
     channels: int
-
-
-class AssetQcError(Exception):
-    def __init__(self, code: str, message: str) -> None:
-        self.code = code
-        self.message = message
-        super().__init__(message)
 
 
 def probe_wav(path: Path) -> AudioProbe:
@@ -49,13 +44,8 @@ def run_qc(
     if ext not in _ALLOWED_EXT:
         raise AssetQcError("INVALID_AUDIO_FORMAT", f"Unsupported format: {ext or '(none)'}")
 
-    if ext != ".wav":
-        raise AssetQcError(
-            "INVALID_AUDIO_FORMAT",
-            "W2 MVP only decodes wav; convert flac/mp3 to wav before upload",
-        )
-
-    probe = probe_wav(path)
+    wav_path = ensure_wav(path) if ext != ".wav" else path
+    probe = probe_wav(wav_path)
     issues: list[QcIssue] = []
 
     min_dur = (

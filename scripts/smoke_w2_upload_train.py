@@ -42,9 +42,25 @@ def _load_wav_bytes() -> tuple[bytes, str]:
     return _make_silent_wav_bytes(5.0), "smoke-silent.wav"
 
 
+def _ensure_kyc(client: httpx.Client) -> None:
+    status = client.get(f"{BASE}/api/v1/kyc/status")
+    if status.status_code != 200:
+        return
+    body = status.json()
+    if not body.get("required") or body.get("verified"):
+        return
+    submit = client.post(
+        f"{BASE}/api/v1/kyc/submit",
+        json={"real_name": "测试用户", "id_number": "110101199001011234"},
+    )
+    print("POST /kyc/submit", submit.status_code, submit.text)
+    submit.raise_for_status()
+
+
 def main() -> int:
     wav, wav_name = _load_wav_bytes()
     with httpx.Client(timeout=120.0) as client:
+        _ensure_kyc(client)
         v = client.post(f"{BASE}/api/v1/voices", json={"name": "smoke-upload-voice"})
         print("POST /voices", v.status_code, v.text)
         v.raise_for_status()

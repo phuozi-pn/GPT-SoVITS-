@@ -48,6 +48,7 @@ class InferPayload(BaseModel):
     catalog_id: UUID | None = None
     skip_quota: bool = False
     project_type: str | None = None
+    source_api_key_id: UUID | None = None
     temperature: float | None = Field(default=None, ge=0.1, le=2.0)
     speed_factor: float | None = Field(default=None, ge=0.5, le=2.0)
     top_p: float | None = Field(default=None, ge=0.1, le=1.0)
@@ -76,6 +77,10 @@ class BatchLinePayload(BaseModel):
     role: str
     text: str
     voice_version_id: UUID
+    speed_factor: float | None = Field(default=None, ge=0.5, le=2.0)
+    emotion: str | None = Field(default=None, max_length=32)
+    emotion_strength: float | None = Field(default=None, ge=0.0, le=1.0)
+    pause_duration: float | None = Field(default=None, ge=0.0, le=5.0)
 
 
 class BatchPayload(BaseModel):
@@ -90,8 +95,11 @@ class ImportEngineWeightsRequest(BaseModel):
     label: str = Field(default="", max_length=64)
     engine_gpt_weights: str = Field(min_length=1, max_length=512)
     engine_sovits_weights: str = Field(min_length=1, max_length=512)
-    ref_audio_host_path: str = Field(min_length=1, max_length=1024)
+    ref_audio_host_path: str = Field(default="", max_length=1024)
+    ref_audio_storage_uri: str = Field(default="", max_length=1024)
     ref_text: str = Field(min_length=1, max_length=2000)
+    consent_id: UUID | None = None
+    voice_asset_id: UUID | None = None
     text_split_method: str = Field(default="cut0", pattern="^(cut0|cut1|cut2|cut3|cut4|cut5)$")
     temperature: float = Field(default=0.78, ge=0.1, le=2.0)
     speed_factor: float = Field(default=1.05, ge=0.5, le=2.0)
@@ -109,6 +117,7 @@ class VoiceVersionSummary(BaseModel):
     ref_text: str | None = None
     imported: bool = False
     granted: bool = False
+    synth_ready: bool = True
     created_at: datetime | None = None
 
 
@@ -226,6 +235,8 @@ class CatalogEntryResponse(BaseModel):
     prohibited_domains: list[str] = Field(default_factory=list)
     policy_version: int = 1
     purchased: bool = False
+    quality_pass: bool | None = None
+    similarity_score: float | None = None
 
 
 class CreatorProfileResponse(BaseModel):
@@ -302,6 +313,11 @@ class AuthorizationCertificateResponse(BaseModel):
     issued_at: datetime | None = None
     expires_at: datetime | None = None
     signature: str
+    verify_url: str = ""
+
+
+class CatalogRejectRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=500)
 
 
 class AuthorizationVerifyResponse(BaseModel):
@@ -451,6 +467,9 @@ class TrainRequest(BaseModel):
     voice_asset_id: UUID | None = None
     consent_id: UUID | None = None
     model_tag: str = MODEL_TAG_V2PRO
+    train_backend: str | None = None  # auto | quick | engine | cloud
+    cloud_local_dataset_prep: bool | None = None  # Studio: 本机切分+对齐后再上传
+    cloud_use_asr: bool | None = None  # Studio: 长音频逐段 ASR（需本机预处理开启）
 
 
 class JobSubmitResponse(BaseModel):
@@ -476,6 +495,14 @@ class JobResponse(BaseModel):
     voice_version_id: UUID | None = None
     checkpoint_uri: str | None = None
     model_tag: str | None = None
+    train_gpt_epochs: int | None = None
+    train_sovits_epochs: int | None = None
+    train_elapsed_sec: float | None = None
+    train_dataset_segments: int | None = None
+    train_remote_work_dir: str | None = None
+    train_remote_dataset_path: str | None = None
+    train_progress_phase: str | None = None
+    train_progress_message: str | None = None
     # batch
     line_count: int | None = None
     succeeded_count: int | None = None
@@ -511,6 +538,21 @@ class ConsentCreateResponse(BaseModel):
     status: str
 
 
+class ConsentAdminSummary(BaseModel):
+    consent_id: UUID
+    voice_id: UUID
+    owner_user_id: UUID
+    voice_name: str
+    status: str
+    created_at: datetime | None = None
+    approved_at: datetime | None = None
+    reject_reason: str | None = None
+
+
+class ConsentRejectRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=500)
+
+
 class QcIssue(BaseModel):
     code: str
     message: str
@@ -523,6 +565,8 @@ class QcResult(BaseModel):
     channels: int | None = None
     issues: list[QcIssue] = Field(default_factory=list)
     ref_text: str | None = None
+    ref_text_auto: bool = False
+    asr_provider: str | None = None
 
 
 class AssetUploadResponse(BaseModel):

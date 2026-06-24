@@ -36,11 +36,22 @@ def _load_config(path: Path | None) -> dict:
         "save_every_epoch": 4,
         "sovits_save_every_epoch": 4,
         "text_low_lr_rate": 0.4,
+        "is_half": False,
         "gpu": "0",
     }
     if path and path.is_file():
         defaults.update(json.loads(path.read_text(encoding="utf-8")))
     return defaults
+
+
+def _resolve_is_half(cfg: dict) -> bool:
+    """FP32 cloud fine-tune matches successful AutoDL runs; FP16 can yield near-silent TTS."""
+    if "is_half" in os.environ:
+        return os.environ.get("is_half", "false").lower() == "true"
+    raw = cfg.get("is_half", False)
+    if isinstance(raw, bool):
+        return raw
+    return str(raw).lower() in ("1", "true", "yes")
 
 
 def _engine_pythonpath(cwd: Path) -> str:
@@ -72,6 +83,17 @@ def _run(cmd: str, *, cwd: Path, env: dict | None = None, label: str = "") -> No
     proc = subprocess.run(cmd, shell=True, cwd=str(cwd), env=env, check=False)
     if proc.returncode != 0:
         raise RuntimeError(f"{label} failed with exit code {proc.returncode}")
+
+
+def _write_progress(result_path: Path, *, phase: str, message: str, **extra: object) -> None:
+    prog = Path(result_path).parent / "progress.json"
+    payload = {
+        "phase": phase,
+        "message": message,
+        "updated_at": time.time(),
+        **extra,
+    }
+    prog.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def _latest_file(root: Path, pattern: str) -> Path | None:
@@ -318,8 +340,19 @@ def main() -> int:
         return 1
 
     cfg = _load_config(Path(args.config) if args.config else None)
-    is_half = os.environ.get("is_half", "true").lower() == "true"
+    is_half = _resolve_is_half(cfg)
     python_exec = sys.executable
+    result_path = Path(args.result).resolve()
+    result_path.parent.mkdir(parents=True, exist_ok=True)
+
+    _write_progress(
+        result_path,
+        phase="starting",
+        message="准备训练",
+        gpt_epochs=cfg["gpt_epochs"],
+        sovits_epochs=cfg["sovits_epochs"],
+        job_id=args.job_id,
+    )
 
     os.chdir(engine_root)
     os.environ["version"] = cfg["version"]
@@ -328,6 +361,8 @@ def main() -> int:
     opt_dir = engine_root / "logs" / args.exp_name
 
     if args.from_step == "all":
+        t_phase = time.time()
+        _write_progress(result_path, phase="preprocess_running", message="预处理中（1A→1B→1C）")
         opt_dir = preprocess_1abc(
             cwd=engine_root,
             python_exec=python_exec,
@@ -339,6 +374,18 @@ def main() -> int:
             is_half=is_half,
             clean=args.clean,
         )
+        _write_progress(
+            result_path,
+            phase="preprocess_done",
+            message=f"预处理完成 · {time.time() - t_phase:.0f}s",
+        )
+        t_phase = time.time()
+        _write_progress(
+            result_path,
+            phase="gpt_running",
+            message=f"GPT 微调中（{cfg['gpt_epochs']} epoch）",
+            gpt_epochs=cfg["gpt_epochs"],
+        )
         train_gpt(
             cwd=engine_root,
             python_exec=python_exec,
@@ -346,6 +393,12 @@ def main() -> int:
             exp_name=args.exp_name,
             cfg=cfg,
             is_half=is_half,
+        )
+        _write_progress(
+            result_path,
+            phase="gpt_done",
+            message=f"GPT 完成 · {cfg['gpt_epochs']} epoch · {time.time() - t_phase:.0f}s",
+            gpt_epochs=cfg["gpt_epochs"],
         )
     elif args.from_step == "gpt":
         if args.clean and opt_dir.exists():
@@ -365,6 +418,13 @@ def main() -> int:
             raise RuntimeError(f"Missing experiment dir for --from-step sovits: {opt_dir}")
         _validate_preprocess(opt_dir, cfg["version"])
 
+    t_phase = time.time()
+    _write_progress(
+        result_path,
+        phase="sovits_running",
+        message=f"SoVITS 微调中（{cfg['sovits_epochs']} epoch）",
+        sovits_epochs=cfg["sovits_epochs"],
+    )
     train_sovits(
         cwd=engine_root,
         python_exec=python_exec,
@@ -372,6 +432,12 @@ def main() -> int:
         exp_name=args.exp_name,
         cfg=cfg,
         is_half=is_half,
+    )
+    _write_progress(
+        result_path,
+        phase="sovits_done",
+        message=f"SoVITS 完成 · {cfg['sovits_epochs']} epoch · {time.time() - t_phase:.0f}s",
+        sovits_epochs=cfg["sovits_epochs"],
     )
 
     gpt_weight = _latest_file(engine_root / "GPT_weights_v2Pro", f"{args.exp_name}*.ckpt")
@@ -392,6 +458,14 @@ def main() -> int:
         "version": cfg["version"],
     }
     Path(args.result).write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    _write_progress(
+        result_path,
+        phase="done",
+        message=f"全部完成 · 远端耗时 {elapsed:.0f}s",
+        elapsed_sec=elapsed,
+        gpt_epochs=cfg["gpt_epochs"],
+        sovits_epochs=cfg["sovits_epochs"],
+    )
     print(json.dumps(result, ensure_ascii=False), flush=True)
     return 0
 

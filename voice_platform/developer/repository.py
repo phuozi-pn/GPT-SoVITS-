@@ -71,6 +71,24 @@ class ApiKeyRepository:
         self._session.refresh(row)
         return row
 
+    def update_webhook(
+        self,
+        *,
+        key_id: UUID,
+        user_id: UUID,
+        webhook_url: str | None,
+        webhook_secret: str | None,
+    ) -> ApiKeyRow | None:
+        row = self.get(key_id)
+        if not row or row.user_id != user_id or row.revoked_at:
+            return None
+        row.webhook_url = (webhook_url or "").strip() or None
+        if webhook_secret is not None:
+            row.webhook_secret = webhook_secret.strip() or None
+        self._session.commit()
+        self._session.refresh(row)
+        return row
+
     def touch_used(self, key_id: UUID) -> None:
         row = self.get(key_id)
         if row:

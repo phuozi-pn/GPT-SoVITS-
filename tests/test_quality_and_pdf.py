@@ -43,9 +43,46 @@ def test_build_authorization_pdf_bytes():
         status="active",
         issued_at=datetime.now(timezone.utc),
         signature="abc123",
+        verify_url="http://127.0.0.1:5173/verify/" + str(AUTH_ID),
     )
     data = build_authorization_pdf(cert)
     assert data[:4] == b"%PDF"
+    base = AuthorizationCertificateResponse(
+        authorization_id=AUTH_ID,
+        seller_user_id=OWNER,
+        buyer_user_id=UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+        voice_version_id=VERSION_ID,
+        catalog_id=UUID("22222222-2222-2222-2222-222222222222"),
+        voice_title="Test Voice",
+        license_type="commercial_standard",
+        char_quota_total=50000,
+        char_quota_used=0,
+        status="active",
+        issued_at=datetime.now(timezone.utc),
+        signature="abc123",
+    )
+    assert len(data) > len(build_authorization_pdf(base))
+
+
+def test_build_authorization_pdf_contains_qr_png():
+    pytest.importorskip("qrcode")
+    cert = AuthorizationCertificateResponse(
+        authorization_id=AUTH_ID,
+        seller_user_id=OWNER,
+        buyer_user_id=UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+        voice_version_id=VERSION_ID,
+        catalog_id=UUID("22222222-2222-2222-2222-222222222222"),
+        voice_title="Test Voice",
+        license_type="commercial_standard",
+        char_quota_total=50000,
+        char_quota_used=0,
+        status="active",
+        issued_at=datetime.now(timezone.utc),
+        signature="abc123",
+        verify_url="http://127.0.0.1:5173/verify/" + str(AUTH_ID),
+    )
+    data = build_authorization_pdf(cert)
+    assert b"/Image" in data or b"PNG" in data
 
 
 def test_quality_evaluate_api(client):

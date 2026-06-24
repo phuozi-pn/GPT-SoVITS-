@@ -65,9 +65,9 @@ export const PAGE_META: Record<string, PageMeta> = {
   },
   "discover-feed": {
     group: "社区",
-    label: "动态",
+    label: "发现",
     desc: "社区时间线：上新与用户动态",
-    workflow: "浏览 → 点赞 / 发帖 → 发私信洽谈",
+    workflow: "浏览动态 → 点赞收藏 → 发私信洽谈",
   },
   community: {
     group: "社区",

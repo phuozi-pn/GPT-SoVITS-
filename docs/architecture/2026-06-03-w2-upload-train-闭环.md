@@ -64,7 +64,7 @@ sequenceDiagram
 | `CONSENT_AUTO_APPROVE` | `true` | dev 跳过人工审授权 |
 | `QC_DEV_RELAX_DURATION` | `false` | `true` 时最短 3s（冒烟/Spike） |
 | `QC_MIN_DURATION_SEC` | `480` | 生产 8min |
-| `QC_MAX_DURATION_SEC` | `900` | 15min 上限 |
+| `QC_MAX_DURATION_SEC` | `3600` | 1h 上限（本地上传与云端训练共用） |
 
 ## 6 本地启动
 

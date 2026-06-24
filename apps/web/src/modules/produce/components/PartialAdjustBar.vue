@@ -2,6 +2,7 @@
 const props = defineProps<{
   selectionLength: number;
   disabled?: boolean;
+  globalSpeed?: number;
 }>();
 
 const localSpeed = defineModel<number>("localSpeed", { default: 1.05 });
@@ -13,6 +14,10 @@ const emit = defineEmits<{ apply: [] }>();
 <template>
   <div v-if="selectionLength > 0" class="partial-bar">
     <p class="partial-bar__title">局部调节 · 已选 {{ selectionLength }} 字</p>
+    <p class="partial-bar__hint">
+      调好后点「应用到选区」，再点底部「重新生成」试听；音调为后处理变调，语速差异更明显。
+      <template v-if="globalSpeed != null">全局语速 {{ globalSpeed.toFixed(2) }}。</template>
+    </p>
     <div class="partial-bar__controls">
       <label class="partial-bar__slider">
         <span>语速 {{ localSpeed.toFixed(2) }}</span>
@@ -44,6 +49,13 @@ const emit = defineEmits<{ apply: [] }>();
   font-size: 13px;
   font-weight: 500;
   color: #8a5a24;
+}
+
+.partial-bar__hint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: rgb(138 90 36 / 0.85);
 }
 
 .partial-bar__controls {

@@ -112,6 +112,10 @@ class BaseWorker(ABC):
         """
         return not self.use_mock()
 
+    def requires_gpu_for_job(self, record) -> bool | None:
+        """按任务覆写 GPU 需求；返回 None 时使用 requires_gpu()。"""
+        return None
+
     def use_mock(self) -> bool:
         """是否启用 Mock 模式。默认从配置读取 engine_mock。"""
         return get_settings().engine_mock
@@ -221,8 +225,14 @@ class BaseWorker(ABC):
                 pass
             return False
 
-        # GPU 互斥：非 Mock 模式下需排队等锁
-        if self.requires_gpu():
+        # GPU 互斥：按任务类型决定是否需要本地 GPU
+        session_peek = get_db_session()
+        record_peek = JobRepository(session_peek).get_job(job_id)
+        session_peek.close()
+        needs_gpu = self.requires_gpu_for_job(record_peek)
+        if needs_gpu is None:
+            needs_gpu = self.requires_gpu()
+        if needs_gpu:
             if not self._acquire_gpu_if_needed(queue):
                 # 锁被别人占着，把 job 放回队尾再等
                 self._requeue(queue, job_id)

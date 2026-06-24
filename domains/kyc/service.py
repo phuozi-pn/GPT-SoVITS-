@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import json
 from uuid import UUID
 
 from voice_platform.auth.repository import UserRepository
 from voice_platform.config import get_settings
 from voice_platform.kyc.id_card import hash_id_number, is_adult, is_valid_id_format, mask_real_name
+from voice_platform.kyc.providers import resolve_kyc_provider
 from voice_platform.kyc.repository import KycAuditRepository
 from voice_platform.kyc.schemas import KycAuditEntry, KycStatusResponse, KycSubmitResponse
 
@@ -34,7 +38,11 @@ class KycService:
             verified=user.verified,
             verified_at=user.verified_at,
             required=self._settings.kyc_required,
-            provider="mock" if self._settings.kyc_mock else "pending_provider",
+            provider=resolve_kyc_provider(
+                kyc_mock=self._settings.kyc_mock,
+                kyc_provider=self._settings.kyc_provider,
+                kyc_saas_configured=self._settings.kyc_saas_configured,
+            ).name,
         )
 
     def ensure_verified_for_train(self, user_id: UUID) -> None:
@@ -100,36 +108,40 @@ class KycService:
             )
 
         id_hash = hash_id_number(id_number)
-        if not self._settings.kyc_mock:
-            self._audit.append(
-                user_id=user_id,
-                action="submit",
-                status="pending",
-                provider="pending_provider",
-                message="Third-party KYC provider not configured",
-                real_name_masked=mask_real_name(real_name),
-                id_number_last4=id_number[-4:],
+        provider = resolve_kyc_provider(
+            kyc_mock=self._settings.kyc_mock,
+            kyc_provider=self._settings.kyc_provider,
+            kyc_saas_configured=self._settings.kyc_saas_configured,
+        )
+        try:
+            result = provider.submit(
+                real_name=real_name,
+                id_number=id_number,
                 id_number_hash=id_hash,
+                user_id=user_id,
             )
-            raise KycServiceError(
-                "KYC_PROVIDER_UNAVAILABLE",
-                "Real-name provider not configured; contact operator for manual verification",
-                503,
-            )
+        except Exception as exc:
+            from voice_platform.kyc.providers.base import KycProviderError
 
-        self._users.set_verified(user_id, verified=True, id_number_hash=id_hash)
+            if isinstance(exc, KycProviderError):
+                raise KycServiceError(exc.code, exc.message, 503) from exc
+            raise
+
+        if result.verified:
+            self._users.set_verified(user_id, verified=True, id_number_hash=id_hash)
         audit = self._audit.append(
             user_id=user_id,
             action="submit",
-            status="approved",
-            message="Mock KYC passed",
+            status=result.status,
+            provider=result.provider,
+            message=result.message,
             real_name_masked=mask_real_name(real_name),
             id_number_last4=id_number[-4:],
             id_number_hash=id_hash,
         )
         return KycSubmitResponse(
-            verified=True,
-            message="Real-name verification passed (mock)",
+            verified=result.verified,
+            message=result.message,
             audit_id=audit.id,
         )
 
@@ -157,6 +169,54 @@ class KycService:
             status="rejected",
             message=note or "Verification revoked by operator",
         )
+        return self.get_status(user_id)
+
+    def process_saas_webhook(self, *, body: bytes, signature: str | None) -> KycStatusResponse:
+        secret = (self._settings.kyc_saas_webhook_secret or "").strip()
+        if secret:
+            expected = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
+            if not signature or not hmac.compare_digest(expected, signature.strip()):
+                raise KycServiceError("WEBHOOK_SIGNATURE_INVALID", "Invalid KYC webhook signature", 401)
+
+        try:
+            data = json.loads(body.decode("utf-8"))
+        except json.JSONDecodeError as exc:
+            raise KycServiceError("INVALID_PAYLOAD", "Invalid JSON body", 400) from exc
+
+        user_id_raw = data.get("user_id")
+        if not user_id_raw:
+            raise KycServiceError("INVALID_PAYLOAD", "user_id required", 400)
+        user_id = UUID(str(user_id_raw))
+        user = self._users.get_by_id(user_id)
+        if not user:
+            raise KycServiceError("USER_NOT_FOUND", "User not found", 404)
+
+        status = str(data.get("status", "")).lower()
+        note = str(data.get("note") or data.get("message") or "KYC SaaS callback")
+        if status in ("approved", "verified", "pass"):
+            id_hash = data.get("id_number_hash")
+            self._users.set_verified(
+                user_id,
+                verified=True,
+                id_number_hash=str(id_hash) if id_hash else None,
+            )
+            self._audit.append(
+                user_id=user_id,
+                action="saas_webhook",
+                status="approved",
+                provider="saas",
+                message=note,
+            )
+        elif status in ("rejected", "failed"):
+            self._audit.append(
+                user_id=user_id,
+                action="saas_webhook",
+                status="rejected",
+                provider="saas",
+                message=note,
+            )
+        else:
+            raise KycServiceError("UNSUPPORTED_STATUS", f"Unsupported status: {status}", 400)
         return self.get_status(user_id)
 
     def list_audit(self, user_id: UUID) -> list[KycAuditEntry]:

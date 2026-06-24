@@ -38,3 +38,76 @@ class ConsentService:
             voice_id=voice_id,
             status=row.status,
         )
+
+    def list_pending(self) -> list:
+        from voice_platform.job.schemas import ConsentAdminSummary
+
+        rows = self._voices.list_pending_consents()
+        out: list[ConsentAdminSummary] = []
+        for row in rows:
+            voice = self._voices.get_voice(row.voice_id)
+            out.append(
+                ConsentAdminSummary(
+                    consent_id=row.id,
+                    voice_id=row.voice_id,
+                    owner_user_id=row.owner_user_id,
+                    voice_name=voice.name if voice else "unknown",
+                    status=row.status,
+                    created_at=row.created_at,
+                    approved_at=row.approved_at,
+                    reject_reason=row.reject_reason,
+                )
+            )
+        return out
+
+    def approve(self, *, consent_id: UUID, admin_user_id: UUID):
+        from voice_platform.job.schemas import ConsentAdminSummary
+
+        row = self._voices.update_consent_review(
+            consent_id=consent_id,
+            status="approved",
+            reviewed_by=admin_user_id,
+        )
+        if not row:
+            raise ConsentServiceError("NOT_FOUND", "Consent not found", 404)
+        voice = self._voices.get_voice(row.voice_id)
+        return ConsentAdminSummary(
+            consent_id=row.id,
+            voice_id=row.voice_id,
+            owner_user_id=row.owner_user_id,
+            voice_name=voice.name if voice else "unknown",
+            status=row.status,
+            created_at=row.created_at,
+            approved_at=row.approved_at,
+            reject_reason=row.reject_reason,
+        )
+
+    def reject(self, *, consent_id: UUID, admin_user_id: UUID, reason: str):
+        from voice_platform.job.schemas import ConsentAdminSummary
+        from voice_platform.social.system import send_system_notice
+
+        row = self._voices.update_consent_review(
+            consent_id=consent_id,
+            status="rejected",
+            reviewed_by=admin_user_id,
+            reject_reason=reason.strip(),
+        )
+        if not row:
+            raise ConsentServiceError("NOT_FOUND", "Consent not found", 404)
+        voice = self._voices.get_voice(row.voice_id)
+        send_system_notice(
+            self._session,
+            recipient_user_id=row.owner_user_id,
+            conversation_peer_user_id=row.owner_user_id,
+            body=f"【系统】你的声纹授权书未通过审核。原因：{reason.strip()}",
+        )
+        return ConsentAdminSummary(
+            consent_id=row.id,
+            voice_id=row.voice_id,
+            owner_user_id=row.owner_user_id,
+            voice_name=voice.name if voice else "unknown",
+            status=row.status,
+            created_at=row.created_at,
+            approved_at=row.approved_at,
+            reject_reason=row.reject_reason,
+        )

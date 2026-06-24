@@ -15,9 +15,10 @@ export function resolveMediaUrl(src: string): string {
       return `${url.pathname}${url.search}`;
     }
     const isLocalApi =
-      (url.hostname === "127.0.0.1" || url.hostname === "localhost") &&
-      (url.port === "8001" || url.port === "");
-    if (isLocalApi && url.pathname.startsWith("/files")) {
+      url.hostname === "127.0.0.1" ||
+      url.hostname === "localhost" ||
+      url.hostname === "[::1]";
+    if (isLocalApi && (url.port === "8001" || url.port === "") && url.pathname.startsWith("/files")) {
       return `${url.pathname}${url.search}`;
     }
   } catch {

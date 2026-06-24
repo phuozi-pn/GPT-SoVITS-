@@ -17,6 +17,9 @@ dependencies = [
     "PyJWT>=2.9.0",
     "swagger-ui-bundle>=1.1.0",
     "fpdf2>=2.8.0",
+    "qrcode[pil]>=8.0",
+    "cryptography>=43.0.0",
+    "paramiko>=3.5.0",
 ]
 
 [project.optional-dependencies]
@@ -28,6 +31,9 @@ dev = [
 ]
 quality = [
     "numpy>=1.26.0",
+]
+asr = [
+    "faster-whisper>=1.1.0",
 ]
 
 [build-system]

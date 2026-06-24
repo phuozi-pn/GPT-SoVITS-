@@ -3,6 +3,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from domains.voices.access import list_accessible_version_ids
+from voice_platform.engine.ref_audio import voice_synth_ready
 from voice_platform.job.repository import (
     ProjectRepository,
     VoiceCatalogRepository,
@@ -62,6 +63,7 @@ class VoiceService:
             ref_text=row.ref_text,
             imported=bool(meta.get("imported")),
             granted=granted,
+            synth_ready=voice_synth_ready(row),
             created_at=row.created_at,
         )
         if not manage:

@@ -1,13 +1,14 @@
 {
   "model_tag": "gsv-v2pro-20250606",
   "version": "v2Pro",
-  "gpt_epochs": 4,
-  "sovits_epochs": 4,
+  "gpt_epochs": 12,
+  "sovits_epochs": 12,
   "batch_size": 4,
   "gpt_batch_size": 4,
   "save_every_epoch": 4,
-  "sovits_save_every_epoch": 4,
+  "sovits_save_every_epoch": 12,
   "text_low_lr_rate": 0.4,
+  "is_half": false,
   "gpu": "0",
-  "notes": "W1 spike defaults — reduce epochs for VRAM/time validation; production TBD-ARCH-04"
+  "notes": "Studio cloud default — 12+12 FP32 for long (30–45min) dry vocal; FP16 caused near-silent synthesis on AutoDL"
 }

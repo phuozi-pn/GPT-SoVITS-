@@ -196,6 +196,27 @@ class JobRepository:
         rows = self._session.scalars(stmt).all()
         return [_row_to_record(row) for row in rows]
 
+    def count_by_status(self, status: str) -> int:
+        return int(
+            self._session.scalar(
+                select(func.count()).select_from(JobRow).where(JobRow.status == status)
+            )
+            or 0
+        )
+
+    def count_failed_since(self, *, hours: int = 24) -> int:
+        from datetime import timedelta
+
+        since = datetime.now(timezone.utc) - timedelta(hours=hours)
+        return int(
+            self._session.scalar(
+                select(func.count())
+                .select_from(JobRow)
+                .where(JobRow.status == JobStatus.FAILED.value, JobRow.updated_at >= since)
+            )
+            or 0
+        )
+
 
 class BatchLineRepository:
     """批量合成行级状态持久化 — 支持实时进度查询、失败行重试、Worker 崩溃恢复。"""
@@ -364,27 +385,6 @@ class BatchLineRepository:
             is not None
         )
 
-    def count_by_status(self, status: str) -> int:
-        return int(
-            self._session.scalar(
-                select(func.count()).select_from(JobRow).where(JobRow.status == status)
-            )
-            or 0
-        )
-
-    def count_failed_since(self, *, hours: int = 24) -> int:
-        from datetime import datetime, timedelta, timezone
-
-        since = datetime.now(timezone.utc) - timedelta(hours=hours)
-        return int(
-            self._session.scalar(
-                select(func.count())
-                .select_from(JobRow)
-                .where(JobRow.status == JobStatus.FAILED.value, JobRow.updated_at >= since)
-            )
-            or 0
-        )
-
 
 class VoiceRepository:
     def __init__(self, session: Session) -> None:
@@ -495,6 +495,39 @@ class VoiceRepository:
             approved_at=approved_at,
         )
         self._session.add(row)
+        self._session.commit()
+        self._session.refresh(row)
+        return row
+
+    def list_pending_consents(self, *, limit: int = 50) -> list[ConsentRow]:
+        return list(
+            self._session.scalars(
+                select(ConsentRow)
+                .where(ConsentRow.status == "pending")
+                .order_by(ConsentRow.created_at.asc())
+                .limit(limit)
+            )
+        )
+
+    def update_consent_review(
+        self,
+        *,
+        consent_id: UUID,
+        status: str,
+        reviewed_by: UUID,
+        reject_reason: str | None = None,
+    ) -> ConsentRow | None:
+        row = self.get_consent(consent_id)
+        if not row:
+            return None
+        now = datetime.now(timezone.utc)
+        row.status = status
+        row.reviewed_by = reviewed_by
+        row.reviewed_at = now
+        row.reject_reason = reject_reason
+        if status == "approved":
+            row.approved_at = now
+            row.reject_reason = None
         self._session.commit()
         self._session.refresh(row)
         return row
@@ -863,11 +896,12 @@ class VoiceCatalogRepository:
         self._session.refresh(row)
         return row
 
-    def reject(self, catalog_id: UUID) -> VoiceCatalogEntryRow | None:
+    def reject(self, catalog_id: UUID, *, reason: str | None = None) -> VoiceCatalogEntryRow | None:
         row = self.get(catalog_id)
         if not row or row.status != "pending":
             return None
         row.status = "rejected"
+        row.reject_reason = (reason or "").strip() or None
         self._session.commit()
         self._session.refresh(row)
         return row
@@ -1121,6 +1155,16 @@ class VoiceAuthorizationRepository:
         if row.char_quota_total > 0 and row.char_quota_used >= row.char_quota_total:
             row.status = "expired"
         self._session.commit()
+
+    def list_active_for_catalog(self, catalog_id: UUID) -> list[VoiceAuthorizationRow]:
+        return list(
+            self._session.scalars(
+                select(VoiceAuthorizationRow).where(
+                    VoiceAuthorizationRow.catalog_id == catalog_id,
+                    VoiceAuthorizationRow.status == "active",
+                )
+            ).all()
+        )
 
     def revoke_for_catalog(self, catalog_id: UUID) -> int:
         rows = list(

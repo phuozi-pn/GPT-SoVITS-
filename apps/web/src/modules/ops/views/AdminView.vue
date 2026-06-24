@@ -26,6 +26,24 @@ import {
   rejectAdminPayout,
   type PayoutRequest,
 } from "@/api/settlement";
+import {
+  approveAdminConsent,
+  fetchAdminPendingConsents,
+  rejectAdminConsent,
+  type ConsentAdminSummary,
+} from "@/api/consents";
+import {
+  createAdminInviteCode,
+  fetchAdminInviteCodes,
+  fetchAdminWaitlist,
+  issueWaitlistInvite,
+  type InviteCodeSummary,
+  type WaitlistEntrySummary,
+} from "@/api/marketplace";
+import {
+  fetchAdminWebhookDeliveries,
+  type WebhookDeliverySummary,
+} from "@/api/developer";
 import { DEV_ADMIN_USER_ID, getDevUserId } from "@/api/catalog";
 import PageHero from "@/components/PageHero.vue";
 import PageSurface from "@/components/PageSurface.vue";
@@ -35,6 +53,7 @@ import PageActionBar from "@/components/PageActionBar.vue";
 import PageActionLink from "@/components/PageActionLink.vue";
 import { formatApiError } from "@/utils/apiErrors";
 import { isLabsEnabled } from "@/config/features";
+import { ApiError } from "@/api/client";
 
 const router = useRouter();
 const stats = ref({
@@ -48,6 +67,16 @@ const complaints = ref<AdminComplaint[]>([]);
 const kycPending = ref<AdminKycUser[]>([]);
 const payments = ref<PaymentOrder[]>([]);
 const payouts = ref<PayoutRequest[]>([]);
+const pendingConsents = ref<ConsentAdminSummary[]>([]);
+const inviteCodes = ref<InviteCodeSummary[]>([]);
+const waitlistEntries = ref<WaitlistEntrySummary[]>([]);
+const webhookDeliveries = ref<WebhookDeliverySummary[]>([]);
+const inviteCode = ref("");
+const inviteMaxUses = ref(5);
+const inviteNote = ref("");
+const inviteExpiresDays = ref("");
+const consentRejectReason = ref("");
+const consentRejectId = ref("");
 const kycAuditUserId = ref("");
 const kycAudit = ref<KycAuditEntry[]>([]);
 const statusFilter = ref("");
@@ -57,7 +86,7 @@ const loading = ref(false);
 const error = ref("");
 const toast = ref("");
 
-type AdminModal = "" | "complaints" | "kyc" | "payouts" | "payments";
+type AdminModal = "" | "complaints" | "kyc" | "payouts" | "payments" | "consents" | "consentReject" | "invites" | "webhooks";
 const activeModal = ref<AdminModal>("");
 
 function openModal(id: AdminModal) {
@@ -94,12 +123,44 @@ async function copyTrace(traceId: string | null | undefined) {
   }
 }
 
+function webhookStatusClass(status: string): string {
+  if (status === "delivered") return "pill pill--ok";
+  if (status === "failed") return "pill pill--danger";
+  if (status === "retrying") return "pill pill--warn";
+  return "pill";
+}
+
+async function fetchOptional<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404) {
+      return fallback;
+    }
+    throw e;
+  }
+}
+
+async function openWebhooksModal() {
+  activeModal.value = "webhooks";
+  try {
+    webhookDeliveries.value = await fetchAdminWebhookDeliveries(40);
+  } catch (e) {
+    webhookDeliveries.value = [];
+    if (e instanceof ApiError && e.status === 404) {
+      error.value = "Webhook 审计接口未就绪，请重启 API（需迁移 025）";
+    } else {
+      error.value = formatApiError(e);
+    }
+  }
+}
+
 async function reload() {
   if (!isAdmin.value) return;
   loading.value = true;
   error.value = "";
   try {
-    const [s, j, c, k, p, po] = await Promise.all([
+    const [s, j, c, k, p, po, consents, invites, waitlist] = await Promise.all([
       fetchPlatformStats(),
       fetchAdminJobs({
         status: statusFilter.value || undefined,
@@ -109,8 +170,11 @@ async function reload() {
       }),
       fetchAdminComplaints(),
       fetchAdminKycPending(),
-      fetchAdminPayments(40),
+      isLabsEnabled() ? fetchAdminPayments(40) : Promise.resolve([]),
       fetchAdminPayouts("pending"),
+      fetchAdminPendingConsents(),
+      fetchOptional(() => fetchAdminInviteCodes(), []),
+      fetchOptional(() => fetchAdminWaitlist(), []),
     ]);
     stats.value = s;
     jobs.value = j.items;
@@ -118,6 +182,9 @@ async function reload() {
     kycPending.value = k;
     payments.value = p;
     payouts.value = po;
+    pendingConsents.value = consents;
+    inviteCodes.value = invites;
+    waitlistEntries.value = waitlist;
   } catch (e) {
     error.value = formatApiError(e);
   } finally {
@@ -194,6 +261,68 @@ async function onRejectPayout(payoutId: string) {
   }
 }
 
+async function onApproveConsent(consentId: string) {
+  try {
+    await approveAdminConsent(consentId);
+    await reload();
+    toast.value = "授权书已通过";
+  } catch (e) {
+    error.value = formatApiError(e);
+  }
+}
+
+function openConsentReject(consentId: string) {
+  consentRejectId.value = consentId;
+  consentRejectReason.value = "授权材料不完整或无效";
+  activeModal.value = "consentReject";
+}
+
+async function onRejectConsent() {
+  if (!consentRejectId.value || !consentRejectReason.value.trim()) return;
+  try {
+    await rejectAdminConsent(consentRejectId.value, consentRejectReason.value.trim());
+    consentRejectId.value = "";
+    closeModal();
+    await reload();
+    toast.value = "授权书已驳回";
+  } catch (e) {
+    error.value = formatApiError(e);
+  }
+}
+
+async function onCreateInvite() {
+  const code = inviteCode.value.trim().toUpperCase();
+  if (!code) return;
+  try {
+    const expiresRaw = inviteExpiresDays.value.trim();
+    await createAdminInviteCode({
+      code,
+      max_uses: inviteMaxUses.value,
+      note: inviteNote.value.trim(),
+      expires_in_days: expiresRaw ? Number(expiresRaw) : null,
+    });
+    inviteCode.value = "";
+    inviteNote.value = "";
+    await reload();
+    toast.value = `邀请码 ${code} 已创建`;
+  } catch (e) {
+    error.value = formatApiError(e);
+  }
+}
+
+async function onIssueWaitlist(waitlistId: string) {
+  try {
+    const res = await issueWaitlistInvite(waitlistId);
+    await reload();
+    toast.value = res.code ? `已发码 ${res.code}` : res.message;
+    setTimeout(() => {
+      toast.value = "";
+    }, 3000);
+  } catch (e) {
+    error.value = formatApiError(e);
+  }
+}
+
 onMounted(() => {
   if (!isAdmin.value) {
     router.replace("/library");
@@ -221,6 +350,8 @@ onMounted(() => {
           <strong :class="{ 'page-metrics__danger': complaints.length > 0 }">{{ complaints.length }}</strong>
           · 待实名
           <strong :class="{ 'page-metrics__danger': kycPending.length > 0 }">{{ kycPending.length }}</strong>
+          · 待授权书
+          <strong :class="{ 'page-metrics__danger': pendingConsents.length > 0 }">{{ pendingConsents.length }}</strong>
           · 待提现
           <strong :class="{ 'page-metrics__danger': payouts.length > 0 }">{{ payouts.length }}</strong>
         </p>
@@ -296,12 +427,31 @@ onMounted(() => {
       </RackPanel>
 
       <PageActionBar label="运营队列">
+        <PageActionLink :badge="pendingConsents.length" @click="openModal('consents')">授权书审核</PageActionLink>
+        <PageActionLink :badge="inviteCodes.length + waitlistEntries.length" @click="openModal('invites')">上架邀请码</PageActionLink>
         <PageActionLink :badge="complaints.length" @click="openModal('complaints')">侵权投诉</PageActionLink>
         <PageActionLink :badge="kycPending.length" @click="openModal('kyc')">实名审核</PageActionLink>
         <PageActionLink :badge="payouts.length" @click="openModal('payouts')">卖家提现</PageActionLink>
         <PageActionLink v-if="isLabsEnabled()" @click="openModal('payments')">支付订单</PageActionLink>
+        <PageActionLink v-if="isLabsEnabled()" @click="router.push('/developer')">开发者 API</PageActionLink>
+        <PageActionLink @click="openWebhooksModal">Webhook 投递</PageActionLink>
       </PageActionBar>
     </PageSurface>
+
+    <AppModal :open="activeModal === 'webhooks'" label="Open API" title="Webhook 投递审计" wide @close="closeModal">
+      <ul v-if="webhookDeliveries.length" class="grant-list">
+        <li v-for="d in webhookDeliveries" :key="d.delivery_id">
+          <span>
+            <span :class="webhookStatusClass(d.status)">{{ d.status }}</span>
+            · {{ d.channel }}
+            · {{ d.attempts }}/{{ d.max_attempts }}
+            <span class="mono"> · {{ d.target_url.slice(0, 48) }}{{ d.target_url.length > 48 ? "…" : "" }}</span>
+            <span v-if="d.last_error" class="admin-table__err"> · {{ d.last_error.slice(0, 60) }}</span>
+          </span>
+        </li>
+      </ul>
+      <p v-else class="hint">暂无 Webhook 投递记录（Open API Job 完成后写入）</p>
+    </AppModal>
 
     <AppModal :open="activeModal === 'complaints'" label="合规" title="侵权投诉队列" wide @close="closeModal">
       <ul v-if="complaints.length" class="grant-list">
@@ -318,6 +468,94 @@ onMounted(() => {
         </li>
       </ul>
       <p v-else class="hint">暂无待处理投诉</p>
+    </AppModal>
+
+    <AppModal :open="activeModal === 'consents'" label="合规" title="待审授权书" wide @close="closeModal">
+      <ul v-if="pendingConsents.length" class="grant-list">
+        <li v-for="c in pendingConsents" :key="c.consent_id">
+          <span>
+            {{ c.voice_name }} · owner {{ shortId(c.owner_user_id) }}
+            · voice {{ shortId(c.voice_id) }}
+          </span>
+          <span class="row-actions">
+            <button class="btn btn--primary btn--sm" @click="onApproveConsent(c.consent_id)">通过</button>
+            <span class="row-actions__sep" aria-hidden="true">·</span>
+            <button class="text-action text-action--danger" @click="openConsentReject(c.consent_id)">驳回</button>
+          </span>
+        </li>
+      </ul>
+      <p v-else class="hint">暂无待审授权书（可在 Studio 上传后关闭 CONSENT_AUTO_APPROVE 测试）</p>
+    </AppModal>
+
+    <AppModal :open="activeModal === 'invites'" label="音色馆" title="上架邀请码与候补" wide @close="closeModal">
+      <h3 class="admin-section-title">候补名单</h3>
+      <ul v-if="waitlistEntries.length" class="grant-list">
+        <li v-for="w in waitlistEntries" :key="w.waitlist_id">
+          <span>
+            <span class="mono">{{ shortId(w.user_id) }}</span>
+            <span v-if="w.phone"> · {{ w.phone }}</span>
+            <span v-if="w.contact"> · {{ w.contact }}</span>
+            <span v-if="w.note"> · {{ w.note }}</span>
+          </span>
+          <span class="row-actions">
+            <button class="btn btn--primary btn--sm" type="button" @click="onIssueWaitlist(w.waitlist_id)">
+              一键发码
+            </button>
+          </span>
+        </li>
+      </ul>
+      <p v-else class="hint">暂无待处理候补</p>
+
+      <h3 class="admin-section-title">邀请码</h3>
+      <ul v-if="inviteCodes.length" class="grant-list">
+        <li v-for="ic in inviteCodes" :key="ic.invite_code_id">
+          <span>
+            <strong>{{ ic.code }}</strong>
+            · {{ ic.used_count }}/{{ ic.max_uses }}
+            <span v-if="ic.note"> · {{ ic.note }}</span>
+            <span v-if="ic.revoked_at" class="pill pill--danger">已撤销</span>
+          </span>
+        </li>
+      </ul>
+      <p v-else class="hint">暂无邀请码</p>
+      <div class="form-grid admin-invite-form">
+        <label>
+          邀请码
+          <input v-model="inviteCode" placeholder="PHONIA-CREATOR-02" />
+        </label>
+        <label>
+          可用次数
+          <input v-model.number="inviteMaxUses" type="number" min="1" />
+        </label>
+        <label>
+          有效天数（可选）
+          <input v-model="inviteExpiresDays" type="number" min="1" placeholder="30" />
+        </label>
+        <label class="form-grid__full">
+          备注
+          <input v-model="inviteNote" placeholder="内测创作者批次 A" />
+        </label>
+      </div>
+      <template #footer>
+        <button class="btn btn--ghost btn--sm" type="button" @click="closeModal">关闭</button>
+        <button class="btn btn--primary btn--sm" type="button" @click="onCreateInvite">创建邀请码</button>
+      </template>
+    </AppModal>
+
+    <AppModal
+      :open="activeModal === 'consentReject'"
+      label="驳回"
+      title="驳回授权书"
+      @close="closeModal"
+    >
+      <label>
+        驳回原因
+        <textarea v-model="consentRejectReason" rows="4" />
+      </label>
+      <template #footer>
+        <button class="btn btn--ghost btn--sm" type="button" @click="closeModal">取消</button>
+        <button class="btn btn--primary btn--sm" type="button" @click="onRejectConsent">确认驳回</button>
+      </template>
     </AppModal>
 
     <AppModal :open="activeModal === 'kyc'" label="KYC" title="待实名用户" wide @close="closeModal">
@@ -449,5 +687,18 @@ onMounted(() => {
   margin-top: 12px;
   font-size: 12px;
   color: var(--color-brushed-dark);
+}
+
+.admin-section-title {
+  margin: 16px 0 8px;
+  font-size: 13px;
+  font-family: var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-brushed-dark);
+}
+
+.admin-section-title:first-child {
+  margin-top: 0;
 }
 </style>

@@ -247,7 +247,13 @@ def _synthesize_line(
     ctx = InferContext(
         job_id=batch_job_id,
         owner_user_id=owner_user_id,
-        payload=InferPayload(voice_version_id=line.voice_version_id, text=cleaned),
+        payload=InferPayload(
+            voice_version_id=line.voice_version_id,
+            text=cleaned,
+            speed_factor=line.speed_factor,
+            emotion=line.emotion,
+            emotion_strength=line.emotion_strength if line.emotion_strength is not None else 0.5,
+        ),
         voice=voice,
     )
     audio_bytes = adapter.synthesize(ctx)

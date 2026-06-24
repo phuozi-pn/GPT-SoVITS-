@@ -113,6 +113,17 @@ class TestFingerprintGeneration:
         # Chirp should produce many hashes
         assert len(hashes) > 0
 
+    def test_long_audio_finishes_quickly(self) -> None:
+        """Enrollment must not scan full-length exports (naive FFT is too slow)."""
+        import time
+
+        wav = _make_chirp_wav(30.0)
+        t0 = time.perf_counter()
+        hashes = generate_fingerprint(wav)
+        elapsed = time.perf_counter() - t0
+        assert len(hashes) > 0
+        assert elapsed < 25.0
+
     def test_same_audio_same_fingerprint(self) -> None:
         """Same audio should produce identical fingerprints."""
         wav = _make_chirp_wav(1.0)

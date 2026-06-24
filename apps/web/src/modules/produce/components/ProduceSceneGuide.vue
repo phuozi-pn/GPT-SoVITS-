@@ -4,9 +4,9 @@ export type ProduceScene = "single" | "dialogue" | "vocal";
 const scene = defineModel<ProduceScene>("scene", { default: "single" });
 
 const items: { id: ProduceScene; label: string; hint: string; disabled?: boolean }[] = [
-  { id: "single", label: "单人朗读", hint: "一段话 · 一个音色" },
-  { id: "dialogue", label: "多人情景", hint: "剧本分段 · 多角色对话" },
-  { id: "vocal", label: "歌曲分段", hint: "多声线 · 实验性念唱" },
+  { id: "single", label: "单人朗读", hint: "长文 / 旁白 · 不切段 · 一个音色" },
+  { id: "dialogue", label: "多人情景", hint: "剧本对话 · 多角色多音色" },
+  { id: "vocal", label: "歌曲分段", hint: "歌词念唱 · 多声线（实验）" },
 ];
 </script>
 

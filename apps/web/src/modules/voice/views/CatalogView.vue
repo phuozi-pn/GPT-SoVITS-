@@ -15,7 +15,7 @@ import { useCatalogBrowse, useCatalogVoicesForEntry } from "@/modules/voice/comp
 import { useCatalogManage } from "@/modules/voice/composables/useCatalogManage";
 import { useCatalogSynth } from "@/modules/voice/composables/useCatalogSynth";
 import { isLabsEnabled } from "@/config/features";
-import { licenseLabel } from "@/utils/catalogDisplay";
+import { catalogAccessPillClass, catalogAccessStatus, licenseLabel } from "@/utils/catalogDisplay";
 
 const browse = useCatalogBrowse();
 const manage = useCatalogManage(browse);
@@ -58,6 +58,7 @@ const {
   myAuthorizations,
   issuedAuthorizations,
   sellerWallet,
+  sellerStats,
   myVoices,
   issuedGrants,
   receivedGrants,
@@ -75,6 +76,10 @@ const {
   grantVoiceId,
   granteeUserId,
   checkoutSummary,
+  publishEligibility,
+  inviteCode,
+  waitlistContact,
+  waitlistNote,
   activeModal,
   ownedVersions,
   isAdmin,
@@ -93,6 +98,8 @@ const {
   onApprove,
   onReject,
   onRegenerateDemo,
+  onRedeemInvite,
+  onJoinWaitlist,
   dismissCheckout,
   goSynthAfterCheckout,
   maybeAutoPurchase,
@@ -187,9 +194,11 @@ const {
                 {{ selectedEntry.included_chars.toLocaleString() }} 字
               </DetailStripItem>
               <DetailStripItem label="状态">
-                <span v-if="selectedEntry.can_use" class="pill pill--ok">已授权</span>
-                <span v-else-if="selectedEntry.price_cents > 0" class="pill pill--warn">需购买</span>
-                <span v-else class="pill pill--ok">免费公开</span>
+                <span
+                  :class="catalogAccessPillClass(catalogAccessStatus(selectedEntry, getDevUserId()).tone)"
+                >
+                  {{ catalogAccessStatus(selectedEntry, getDevUserId()).label }}
+                </span>
               </DetailStripItem>
             </DetailStrip>
 
@@ -216,12 +225,22 @@ const {
 
             <div v-if="selectedEntry" class="catalog-aside-actions row-actions">
               <button
-                v-if="selectedEntry.price_cents > 0 && !selectedEntry.can_use"
+                v-if="
+                  selectedEntry.price_cents > 0 &&
+                  !selectedEntry.purchased &&
+                  selectedEntry.owner_user_id !== getDevUserId()
+                "
                 class="btn btn--primary btn--sm"
                 @click="onPurchaseSelected"
               >
                 购买授权 {{ formatPriceCents(selectedEntry.price_cents) }}
               </button>
+              <p
+                v-else-if="selectedEntry.owner_user_id === getDevUserId() && selectedEntry.price_cents > 0"
+                class="hint catalog-aside-hint"
+              >
+                你是创作者，买家需用其他账号购买
+              </p>
               <button class="text-action" @click="onDownloadDemoSelected">下载样音</button>
               <span class="row-actions__sep" aria-hidden="true">·</span>
               <button
@@ -301,6 +320,7 @@ const {
       :my-authorizations="myAuthorizations"
       :issued-authorizations="issuedAuthorizations"
       :seller-wallet="sellerWallet"
+      :seller-stats="sellerStats"
       :my-voices="myVoices"
       :issued-grants="issuedGrants"
       :received-grants="receivedGrants"
@@ -318,6 +338,10 @@ const {
       :grant-voice-id="grantVoiceId"
       :grantee-user-id="granteeUserId"
       :checkout-summary="checkoutSummary"
+      :publish-eligibility="publishEligibility"
+      :invite-code="inviteCode"
+      :waitlist-contact="waitlistContact"
+      :waitlist-note="waitlistNote"
       :version-option-label="versionOptionLabel"
       :dev-user-presets="DEV_USER_PRESETS"
       :prohibited-domain-options="PROHIBITED_DOMAIN_OPTIONS"
@@ -329,6 +353,8 @@ const {
       @revoke-grant="onRevokeGrant"
       @approve="onApprove"
       @reject="onReject"
+      @redeem-invite="onRedeemInvite"
+      @join-waitlist="onJoinWaitlist"
       @export-certificate="onExportCertificate"
       @toggle-prohibited="toggleProhibited"
       @dismiss-checkout="dismissCheckout"
@@ -346,6 +372,9 @@ const {
       @update:complaint-text="complaintText = $event"
       @update:grant-voice-id="grantVoiceId = $event"
       @update:grantee-user-id="granteeUserId = $event"
+      @update:invite-code="inviteCode = $event"
+      @update:waitlist-contact="waitlistContact = $event"
+      @update:waitlist-note="waitlistNote = $event"
     />
   </div>
 </template>

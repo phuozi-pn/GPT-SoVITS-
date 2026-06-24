@@ -19,6 +19,8 @@ from voice_platform.payment.schemas import (
     PaymentOrderStatusResponse,
     PaymentWebhookPayload,
 )
+from voice_platform.payment.providers import get_payment_provider
+from voice_platform.payment.providers.base import CheckoutOrderContext, PaymentProviderError
 from voice_platform.payment.webhook import new_provider_ref, verify_webhook_signature
 
 
@@ -101,7 +103,22 @@ class PaymentService:
             provider_ref=provider_ref,
             status="pending",
         )
-        checkout_url = f"/api/v1/payments/orders/{order.id}/mock-confirm"
+        try:
+            pay_provider = get_payment_provider(provider)
+            session = pay_provider.create_checkout(
+                CheckoutOrderContext(
+                    order_id=order.id,
+                    amount_cents=entry.price_cents,
+                    currency=order.currency,
+                    provider_ref=provider_ref,
+                    buyer_user_id=buyer_user_id,
+                    catalog_id=catalog_id,
+                    catalog_title=entry.title,
+                )
+            )
+        except PaymentProviderError as exc:
+            raise PaymentServiceError(exc.code, exc.message, 503) from exc
+
         return CheckoutResponse(
             order_id=order.id,
             status="pending",
@@ -109,7 +126,8 @@ class PaymentService:
             currency=order.currency,
             provider=provider,
             provider_ref=provider_ref,
-            checkout_url=checkout_url if provider == "mock" else None,
+            checkout_url=session.checkout_url,
+            qr_code_url=session.qr_code_url,
         )
 
     def get_order(self, *, order_id: UUID, buyer_user_id: UUID) -> PaymentOrderStatusResponse:

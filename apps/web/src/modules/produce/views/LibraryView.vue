@@ -19,7 +19,8 @@ import PageSurface from "@/components/PageSurface.vue";
 import { getPageMeta } from "@/config/navigation";
 import { formatApiError } from "@/utils/apiErrors";
 import { useToast } from "@/composables/useToast";
-import { buildSynthesisPayload, newSegment } from "@/modules/produce/types/script";
+import { PROJECT_TYPE_OPTIONS } from "@/api/marketplace";
+import { buildSynthesisPayload, estimateSynthPollTimeoutMs, newSegment, validateSynthesisScript } from "@/modules/produce/types/script";
 import MakeWorkspace from "@/modules/produce/components/MakeWorkspace.vue";
 import ProduceSceneGuide, { type ProduceScene } from "@/modules/produce/components/ProduceSceneGuide.vue";
 
@@ -41,9 +42,15 @@ const error = ref("");
 const history = ref<HistoryItem[]>([]);
 
 const synthVersionId = ref("");
-const segments = ref([newSegment("", "方源，你给我出来！")]);
-const multiMode = ref(false);
+const segments = ref([newSegment("", "")]);
 const produceScene = ref<ProduceScene>("single");
+const multiMode = computed({
+  get: () => produceScene.value !== "single",
+  set: (on: boolean) => {
+    if (!on) produceScene.value = "single";
+    else if (produceScene.value === "single") produceScene.value = "dialogue";
+  },
+});
 const aiDisclosureAck = ref(true);
 const audioUrl = ref("");
 const lastSynthJobId = ref("");
@@ -52,6 +59,8 @@ const speed = ref(1.05);
 const temperature = ref(0.78);
 const emotion = ref<string | null>(null);
 const emotionStrength = ref(0.5);
+const tunePending = ref(false);
+const projectType = ref("");
 const showImport = ref(false);
 
 const importForm = ref<ImportWeightsBody>({
@@ -68,12 +77,15 @@ const importForm = ref<ImportWeightsBody>({
 });
 
 const pickerItems = computed(() =>
-  versions.value.map((v) => ({
+  versions.value
+    .filter((v) => v.synth_ready !== false)
+    .map((v) => ({
     id: v.voice_version_id,
     title: v.voice_name,
     subtitle: `v${v.version} · ${v.voice_version_id.slice(0, 8)}…`,
     tags: [v.label, v.imported ? "已导入" : "", v.granted ? "已授权" : ""].filter(Boolean) as string[],
     badge: v.granted ? "授权" : v.imported ? "导入" : undefined,
+    synthReady: v.synth_ready !== false,
   })),
 );
 
@@ -99,7 +111,12 @@ async function reload() {
   try {
     versions.value = await fetchVoiceVersions();
     if (!synthVersionId.value && versions.value.length) {
-      synthVersionId.value = versions.value[0].voice_version_id;
+      const ready = versions.value.find((v) => v.synth_ready !== false);
+      if (ready) synthVersionId.value = ready.voice_version_id;
+    }
+    if (synthVersionId.value && !versions.value.some((v) => v.voice_version_id === synthVersionId.value && v.synth_ready !== false)) {
+      const ready = versions.value.find((v) => v.synth_ready !== false);
+      synthVersionId.value = ready?.voice_version_id ?? "";
     }
     if (segments.value.length && !segments.value[0].voiceVersionId) {
       segments.value[0].voiceVersionId = synthVersionId.value;
@@ -120,15 +137,13 @@ watch(synthVersionId, (id) => {
   }
 });
 
-watch(produceScene, (scene) => {
-  if (scene === "dialogue" || scene === "vocal") multiMode.value = true;
-  else if (scene === "single") multiMode.value = false;
-});
-
-watch(multiMode, (on) => {
-  if (on && produceScene.value === "single") produceScene.value = "dialogue";
-  if (!on && (produceScene.value === "dialogue" || produceScene.value === "vocal")) {
-    produceScene.value = "single";
+watch(produceScene, (scene, prev) => {
+  if (scene === "single" && prev && prev !== "single") {
+    const merged = segments.value
+      .map((s) => s.text.trim())
+      .filter(Boolean)
+      .join("\n\n");
+    segments.value = [newSegment(synthVersionId.value, merged)];
   }
 });
 
@@ -154,6 +169,16 @@ async function onImport() {
 
 async function onSynth() {
   if (!synthVersionId.value || !aiDisclosureAck.value) return;
+  const check = validateSynthesisScript(segments.value, {
+    speed: speed.value,
+    temperature: temperature.value,
+    emotion: emotion.value,
+    emotionStrength: emotionStrength.value,
+  });
+  if (!check.ok) {
+    error.value = check.message;
+    return;
+  }
   const voice = selectedVoice.value;
   error.value = "";
   audioUrl.value = "";
@@ -165,19 +190,32 @@ async function onSynth() {
       temperature: temperature.value,
       emotion: emotion.value,
       emotionStrength: emotionStrength.value,
+      projectType: projectType.value || null,
     });
     const text = segments.value.map((s) => s.text).join("");
     const s = await synthesize(payload, aiDisclosureAck.value);
     lastSynthJobId.value = s.job_id;
-    const job = await pollJob(s.job_id, undefined, 180_000);
+    const pollMs = estimateSynthPollTimeoutMs(segments.value, {
+      speed: speed.value,
+      temperature: temperature.value,
+      emotion: emotion.value,
+      emotionStrength: emotionStrength.value,
+    });
+    const job = await pollJob(s.job_id, undefined, pollMs);
     if (job.status !== "succeeded" || !job.audio_url) {
       throw new Error(job.error_message ?? "合成未完成，请检查引擎是否在 9880 端口运行。");
     }
     audioUrl.value = job.audio_url;
+    tunePending.value = false;
     toastOk("生成完成——可在调音区返听并导出");
     if (voice) pushHistory(voice, text, job.audio_url);
   } catch (e) {
-    error.value = formatApiError(e);
+    const base = formatApiError(e);
+    if (lastSynthJobId.value && base.includes("任务超时")) {
+      error.value = `${base} 任务 ID：${lastSynthJobId.value}。可点「重试」再次生成。`;
+    } else {
+      error.value = base;
+    }
   } finally {
     synthBusy.value = false;
   }
@@ -186,7 +224,6 @@ async function onSynth() {
 function loadFromHistory(item: HistoryItem) {
   audioUrl.value = item.audioUrl;
   segments.value = [newSegment(synthVersionId.value, item.textPreview)];
-  multiMode.value = false;
   produceScene.value = "single";
 }
 </script>
@@ -198,7 +235,7 @@ function loadFromHistory(item: HistoryItem) {
       :message="error"
       retry
       :loading="loading"
-      @retry="reload"
+      @retry="onSynth"
       @dismiss="error = ''"
     />
 
@@ -236,6 +273,18 @@ function loadFromHistory(item: HistoryItem) {
         实验性念唱预览：基于说话合成引擎，非专业歌声；正式演唱需旋律引擎与歌唱授权素材。
       </p>
 
+      <div v-if="hasVoices" class="library-project-type">
+        <label>
+          <span class="library-project-type__label">项目类型</span>
+          <select v-model="projectType" class="library-project-type__select">
+            <option v-for="opt in PROJECT_TYPE_OPTIONS" :key="opt.value" :value="opt.value">
+              {{ opt.label }}
+            </option>
+          </select>
+        </label>
+        <p class="hint">购买商用音色时，若项目类型命中「禁止领域」将被拦截。</p>
+      </div>
+
       <EmptyGuide
         v-if="!loading && !hasVoices"
         title="还没有可用音色"
@@ -262,6 +311,7 @@ function loadFromHistory(item: HistoryItem) {
           v-model:temperature="temperature"
           v-model:emotion="emotion"
           v-model:emotion-strength="emotionStrength"
+          v-model:tune-pending="tunePending"
           :work-mode="produceScene"
           :voices="pickerItems"
           :voice-title="selectedPicker?.title"
@@ -352,6 +402,37 @@ function loadFromHistory(item: HistoryItem) {
   font-size: 13px;
   line-height: 1.5;
   color: #e0b060;
+}
+
+.library-project-type {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-ui);
+  background: rgb(255 255 255 / 0.03);
+}
+
+.library-project-type label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.library-project-type__label {
+  font-size: 13px;
+  color: var(--color-ink-muted);
+}
+
+.library-project-type__select {
+  min-width: 220px;
+  padding: 6px 10px;
+  border-radius: var(--radius-ui);
+  border: 1px solid var(--color-border-soft);
+  background: var(--color-surface);
+  color: inherit;
 }
 
 .history-section {

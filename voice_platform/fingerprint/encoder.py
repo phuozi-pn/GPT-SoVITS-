@@ -25,6 +25,8 @@ PEAK_NEIGHBORHOOD_SIZE = 20  # freq bins for local maximum detection
 TARGET_ZONE_MIN = 1  # minimum time delta (frames) for hash pairs
 TARGET_ZONE_MAX = 63  # maximum time delta (frames) for hash pairs
 FANOUT = 3  # number of peaks paired from each anchor
+# Naive Python DFT is O(frames * fft^2); cap enroll clip to keep infer worker responsive.
+MAX_FINGERPRINT_SEC = 2.0
 
 
 def _read_wav_pcm(wav_bytes: bytes) -> tuple[list[int], int]:
@@ -199,6 +201,9 @@ def generate_fingerprint(wav_bytes: bytes) -> set[int]:
         return set()
 
     float_samples = _resample_mono(samples, orig_sr)
+    max_samples = int(SAMPLE_RATE * MAX_FINGERPRINT_SEC)
+    if len(float_samples) > max_samples:
+        float_samples = float_samples[:max_samples]
     spectrogram = _fft_spectrogram(float_samples)
 
     if len(spectrogram) < 5:

@@ -1,21 +1,27 @@
 <script setup lang="ts">
-defineProps<{
-  disabled?: boolean;
-  multiMode?: boolean;
-  compact?: boolean;
-  segmenting?: boolean;
-  llmEnabled?: boolean;
-  polishing?: boolean;
-}>();
+import type { ProduceWorkMode } from "@/modules/produce/types/script";
+
+const props = withDefaults(
+  defineProps<{
+    disabled?: boolean;
+    workMode?: ProduceWorkMode;
+    compact?: boolean;
+    segmenting?: boolean;
+    llmEnabled?: boolean;
+    polishing?: boolean;
+    smartTuning?: boolean;
+  }>(),
+  { workMode: "single" },
+);
 
 const emit = defineEmits<{
   insertPause: [mark: string];
   clear: [];
   sample: [text: string];
-  toggleMulti: [];
   addSegment: [];
   importScript: [];
   smartSegment: [];
+  smartTune: [];
   polishScript: [];
 }>();
 
@@ -25,11 +31,15 @@ const pauseMarks = [
   { label: "换行", mark: "\n\n", hint: "2s" },
 ] as const;
 
-const samples = [
-  "你好，欢迎试听。",
-  "方源：你给我出来！\n白凝冰：你以为逃得掉吗？",
-  "今天我们来测试一下语音合成。",
-];
+const samplesByMode: Record<ProduceWorkMode, string[]> = {
+  single: ["你好，欢迎试听。", "今天我们来测试一下语音合成功能。"],
+  dialogue: ["方源：你给我出来！\n白凝冰：你以为逃得掉吗？"],
+  vocal: ["主唱：第一句歌词\n和声：和声歌词"],
+};
+
+function samplesFor(mode: ProduceWorkMode = "single") {
+  return samplesByMode[mode] ?? samplesByMode.single;
+}
 </script>
 
 <template>
@@ -40,20 +50,17 @@ const samples = [
     aria-label="文稿工具"
   >
     <!-- ── 主操作行 ────────────────────────────────── -->
-    <div class="tb-row">
+    <div class="tb-row tb-row--primary">
       <div class="tb-group">
 
-        <!-- 模式切换 -->
-        <button
-          type="button"
-          class="tb-btn"
-          :class="{ 'tb-btn--on': multiMode }"
-          :disabled="disabled"
-          @click="emit('toggleMulti')"
+        <span
+          v-if="workMode"
+          class="tb-mode-badge"
+          :class="`tb-mode-badge--${workMode}`"
+          role="status"
         >
-          <span class="tb-btn__glyph" aria-hidden="true">☷</span>
-          {{ multiMode ? "情景配音" : "单人朗读" }}
-        </button>
+          {{ workMode === "single" ? "单人朗读" : workMode === "dialogue" ? "多人情景" : "歌曲分段" }}
+        </span>
 
         <!-- 清空 -->
         <button
@@ -67,9 +74,19 @@ const samples = [
 
         <span class="tb-sep" aria-hidden="true" />
 
-        <!-- 导入 -->
         <button
-          v-if="!compact"
+          v-if="workMode !== 'single'"
+          type="button"
+          class="tb-btn tb-btn--dash"
+          :class="{ 'tb-btn--pending': segmenting }"
+          :disabled="disabled || segmenting"
+          @click="emit('smartSegment')"
+        >
+          {{ segmenting ? "分析中…" : "智能分段" }}
+        </button>
+
+        <button
+          v-if="workMode !== 'single'"
           type="button"
           class="tb-btn tb-btn--dash"
           :disabled="disabled"
@@ -78,9 +95,8 @@ const samples = [
           导入剧本
         </button>
 
-        <!-- 添加段落 -->
         <button
-          v-if="multiMode && !compact"
+          v-if="workMode !== 'single'"
           type="button"
           class="tb-btn tb-btn--dash"
           :disabled="disabled"
@@ -89,10 +105,12 @@ const samples = [
           添加段落
         </button>
       </div>
+    </div>
 
-      <!-- 停顿 -->
+    <!-- 停顿（仅单人朗读，独立一行） -->
+    <div v-if="workMode === 'single'" class="tb-row tb-row--pause">
+      <span class="tb-label">停顿</span>
       <div class="tb-group">
-        <span class="tb-label">停顿</span>
         <button
           v-for="p in pauseMarks"
           :key="p.label"
@@ -107,18 +125,19 @@ const samples = [
       </div>
     </div>
 
-    <!-- ── 灵感辅助行（原 AI 区 → 人文化） ──────────── -->
-    <div v-if="!compact" class="tb-muse-row">
+    <!-- 智能表演 / 文稿润色 -->
+    <div v-if="!compact && workMode !== 'single'" class="tb-muse-row">
       <div class="tb-muse-row__inner">
         <span class="tb-muse-row__tag" aria-hidden="true">灵感</span>
         <button
           type="button"
           class="tb-btn tb-btn--muse"
-          :class="{ 'tb-btn--pending': segmenting }"
-          :disabled="disabled || segmenting"
-          @click="emit('smartSegment')"
+          :class="{ 'tb-btn--pending': smartTuning }"
+          :disabled="disabled || smartTuning"
+          :title="llmEnabled ? 'DeepSeek 逐段分析台词语义，推荐情感与韵律' : '规则分析台词语义，推荐情感与韵律（配置 DeepSeek 可更准确）'"
+          @click="emit('smartTune')"
         >
-          {{ segmenting ? "分析中…" : "智能分段" }}
+          {{ smartTuning ? "分析中…" : "智能表演" }}
         </button>
         <button
           v-if="llmEnabled"
@@ -137,7 +156,7 @@ const samples = [
     <div class="tb-samples">
       <span class="tb-label">示例</span>
       <button
-        v-for="(s, i) in samples"
+        v-for="(s, i) in samplesFor(props.workMode)"
         :key="i"
         type="button"
         class="sample-chip"
@@ -155,15 +174,15 @@ const samples = [
 .editor-toolbar {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 10px 16px;
+  gap: 12px;
+  padding: 14px 18px;
   background: var(--color-xuan-light);
   border-bottom: 1px solid var(--color-line);
 }
 
 .editor-toolbar--compact {
-  gap: 6px;
-  padding: 8px 12px;
+  gap: 8px;
+  padding: 10px 12px;
 }
 
 /* ── 行 ──────────────────────────────────────────── */
@@ -171,15 +190,20 @@ const samples = [
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 6px 12px;
+  gap: 10px 14px;
+}
+
+.tb-row--pause {
+  padding: 10px 12px;
+  border-radius: var(--radius-ui);
+  background: rgb(20 19 18 / 0.03);
 }
 
 .tb-group {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
+  gap: 8px;
 }
 
 .tb-sep {
@@ -206,7 +230,8 @@ const samples = [
   align-items: center;
   justify-content: center;
   gap: 5px;
-  padding: 5px 10px;
+  padding: 7px 12px;
+  min-height: 34px;
   border: 1px solid rgb(20 19 18 / 0.08);
   border-radius: var(--radius-full);
   background: var(--color-surface);
@@ -242,6 +267,33 @@ const samples = [
   font-size: 14px;
   line-height: 1;
   font-weight: 400;
+}
+
+/* 当前模式（只读，与页顶场景一致） */
+.tb-mode-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.tb-mode-badge--single {
+  background: rgb(59 130 246 / 0.12);
+  color: #1d4ed8;
+}
+
+.tb-mode-badge--dialogue {
+  background: var(--color-vu-amber-soft);
+  color: #8a5a24;
+}
+
+.tb-mode-badge--vocal {
+  background: var(--color-indigo-soft);
+  color: var(--color-indigo);
 }
 
 /* 变体：激活 */
@@ -280,9 +332,10 @@ const samples = [
 
 /* 变体：微小 */
 .tb-btn--tiny {
-  padding: 3px 8px;
-  font-size: 11px;
-  min-width: 32px;
+  padding: 6px 12px;
+  font-size: 12px;
+  min-width: 44px;
+  min-height: 34px;
 }
 
 /* ── 灵感行（替代原 AI 紫色区） ───────────────────── */
@@ -342,16 +395,18 @@ const samples = [
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 5px;
+  gap: 8px;
+  padding-top: 4px;
+  border-top: 1px solid rgb(212 205 195 / 0.35);
 }
 
 .sample-chip {
-  max-width: 220px;
-  padding: 4px 9px;
+  max-width: 280px;
+  padding: 6px 12px;
   border: 1px solid rgb(20 19 18 / 0.06);
   border-radius: var(--radius-full);
   background: var(--color-surface);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.4;
   color: var(--color-ink-muted);
   cursor: pointer;

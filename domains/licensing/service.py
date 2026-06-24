@@ -284,6 +284,9 @@ class LicensingService:
             json.dumps(payload, sort_keys=True, ensure_ascii=False).encode(),
             hashlib.sha256,
         ).hexdigest()
+        verify_url = (
+            f"{get_settings().web_public_base_url}/verify/{row.id}"
+        )
         return AuthorizationCertificateResponse(
             authorization_id=row.id,
             seller_user_id=row.seller_user_id,
@@ -298,6 +301,7 @@ class LicensingService:
             issued_at=row.created_at,
             expires_at=row.expires_at,
             signature=signature,
+            verify_url=verify_url,
         )
 
     def verify_certificate(self, authorization_id: UUID) -> AuthorizationVerifyResponse:
@@ -457,10 +461,13 @@ class LicensingService:
         if not row or row.status != "open":
             raise LicensingServiceError("COMPLAINT_NOT_FOUND", "Open complaint not found", 404)
         catalog_id = row.catalog_id
+        entry = self._catalog.get(catalog_id) if catalog_id else None
         if not catalog_id and row.voice_version_id:
             entry = self._catalog.get_by_version(row.voice_version_id)
             catalog_id = entry.id if entry else None
+        active_buyers: list = []
         if catalog_id:
+            active_buyers = self._auths.list_active_for_catalog(catalog_id)
             self._catalog.takedown(catalog_id)
             self._auths.revoke_for_catalog(catalog_id)
         resolved = self._complaints.resolve(
@@ -471,6 +478,29 @@ class LicensingService:
         )
         if not resolved:
             raise LicensingServiceError("COMPLAINT_NOT_FOUND", "Complaint not found", 404)
+        title = entry.title if entry else "音色"
+        seller_id = entry.owner_user_id if entry else None
+        note = resolution_note or "运营下架处理"
+        send_system_notice(
+            self._session,
+            recipient_user_id=row.reporter_user_id,
+            conversation_peer_user_id=seller_id or row.reporter_user_id,
+            body=f"【系统】你的侵权投诉已处理：「{title}」已下架。备注：{note}",
+        )
+        if seller_id:
+            send_system_notice(
+                self._session,
+                recipient_user_id=seller_id,
+                conversation_peer_user_id=row.reporter_user_id,
+                body=f"【系统】你的音色「{title}」因侵权投诉已下架，相关购买授权已撤销。",
+            )
+        for auth in active_buyers:
+            send_system_notice(
+                self._session,
+                recipient_user_id=auth.buyer_user_id,
+                conversation_peer_user_id=seller_id or auth.seller_user_id,
+                body=f"【系统】你购买的音色「{title}」授权已因侵权处理撤销，历史凭证仍可验真。",
+            )
         return self._complaint_response(resolved)
 
     def dismiss_complaint(
@@ -488,6 +518,12 @@ class LicensingService:
         )
         if not resolved:
             raise LicensingServiceError("COMPLAINT_NOT_FOUND", "Open complaint not found", 404)
+        send_system_notice(
+            self._session,
+            recipient_user_id=row.reporter_user_id,
+            conversation_peer_user_id=row.reporter_user_id,
+            body=f"【系统】你的侵权投诉已驳回。备注：{resolution_note or 'Dismissed'}",
+        )
         return self._complaint_response(resolved)
 
     def build_certificate_pdf(self, *, authorization_id: UUID, user_id: UUID) -> bytes:
@@ -511,6 +547,20 @@ class LicensingService:
             resolution_note=row.resolution_note,
             created_at=row.created_at,
             resolved_at=row.resolved_at,
+        )
+
+    def seller_authorization_stats(self, *, seller_user_id: UUID):
+        from voice_platform.marketplace.schemas import SellerAuthorizationStatsResponse
+
+        rows = self._auths.list_for_seller(seller_user_id)
+        active = [row for row in rows if row.status == "active"]
+        total_chars_used = sum(row.char_quota_used for row in rows)
+        total_chars_quota = sum(row.char_quota_total for row in active if row.char_quota_total > 0)
+        return SellerAuthorizationStatsResponse(
+            total_sales=len(rows),
+            active_authorizations=len(active),
+            total_chars_used=total_chars_used,
+            total_chars_quota=total_chars_quota,
         )
 
 

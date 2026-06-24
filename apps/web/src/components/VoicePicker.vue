@@ -6,6 +6,7 @@ export type VoicePickerItem = {
   subtitle?: string;
   tags?: string[];
   badge?: string;
+  synthReady?: boolean;
 };
 
 const props = defineProps<{

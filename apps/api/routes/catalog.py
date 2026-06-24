@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from voice_platform.job.schemas import (
     CatalogEntryResponse,
     CatalogPublishRequest,
+    CatalogRejectRequest,
     CreatorProfileResponse,
     VoiceGrantCreateRequest,
     VoiceGrantResponse,
@@ -117,11 +118,15 @@ def regenerate_catalog_demo(
 @router.post("/catalog/voices/{catalog_id}/reject", response_model=CatalogEntryResponse)
 def reject_catalog_voice(
     catalog_id: UUID,
+    body: CatalogRejectRequest,
     _: UUID = Depends(require_admin_user),
     session: Session = Depends(get_session),
 ) -> CatalogEntryResponse:
     try:
-        return MarketplaceService(session).reject_catalog_entry(catalog_id=catalog_id)
+        return MarketplaceService(session).reject_catalog_entry(
+            catalog_id=catalog_id,
+            reason=body.reason,
+        )
     except MarketplaceServiceError as exc:
         raise_domain_http(exc)
 

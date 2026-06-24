@@ -57,3 +57,15 @@ def test_trim_wav_copy(tmp_path):
     with wave.open(str(dst), "rb") as wf:
         dur = wf.getnframes() / wf.getframerate()
     assert 8.9 <= dur <= 9.1
+
+
+def test_ensure_engine_ref_wav_trims_long_audio(tmp_path):
+    from voice_platform.engine.train_dataset import ensure_engine_ref_wav
+
+    src = tmp_path / "long.wav"
+    dst = tmp_path / "ref.wav"
+    _write_wav(src, 120.0)
+    ensure_engine_ref_wav(src, dst)
+    with wave.open(str(dst), "rb") as wf:
+        dur = wf.getnframes() / wf.getframerate()
+    assert 8.9 <= dur <= 9.1

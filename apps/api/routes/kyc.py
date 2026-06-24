@@ -5,7 +5,7 @@ from uuid import UUID
 from apps.api.deps import get_current_user_id, get_session, require_admin_user
 from apps.api.exceptions import raise_domain_http
 from domains.kyc.service import KycService, KycServiceError
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 from voice_platform.kyc.schemas import (
     AdminKycUserSummary,
@@ -86,5 +86,18 @@ def admin_kyc_revoke(
 ) -> KycStatusResponse:
     try:
         return KycService(session).admin_revoke(user_id, note=body.note if body else None)
+    except KycServiceError as exc:
+        raise_domain_http(exc)
+
+
+@router.post("/kyc/webhooks/saas", response_model=KycStatusResponse)
+async def kyc_saas_webhook(
+    request: Request,
+    session: Session = Depends(get_session),
+) -> KycStatusResponse:
+    body = await request.body()
+    signature = request.headers.get("X-Kyc-Webhook-Signature")
+    try:
+        return KycService(session).process_saas_webhook(body=body, signature=signature)
     except KycServiceError as exc:
         raise_domain_http(exc)

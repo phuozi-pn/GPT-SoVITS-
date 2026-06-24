@@ -73,10 +73,12 @@ def test_import_weights(engine_with_weights):
     session = MagicMock()
     with patch("domains.voices.import_service.VoiceRepository") as voices_cls, patch(
         "domains.voices.import_service.VoiceVersionRepository"
-    ) as versions_cls:
+    ) as versions_cls, patch(
+        "domains.voices.import_service.register_engine_weights_version"
+    ) as reg:
         voices_cls.return_value.create_voice.return_value = voice_row
         versions_cls.return_value.next_version_number.return_value = 1
-        versions_cls.return_value.create_version.return_value = version_row
+        reg.return_value = version_row
 
         svc = EngineWeightsImportService(session)
         out = svc.import_weights(owner_user_id=user, body=body)
@@ -84,7 +86,7 @@ def test_import_weights(engine_with_weights):
     assert out.imported is True
     assert out.ref_text == "ref text"
     assert out.voice_version_id == version_id
-    assert list((engine / "samples").glob("platform_ref_*.wav"))
+    reg.assert_called_once()
 
 
 def test_import_weights_missing_gpt(engine_with_weights):

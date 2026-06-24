@@ -1,10 +1,21 @@
-# MVP+1 音色馆 + VoiceGrant（第一切片）
+# MVP+1 音色市场（Phase 1–6）
 
-> 状态：**进行中** — 不含定价/支付/聊天
+> 状态：**Phase 1–3 / 6 已完成；Phase 4–5 骨架已落地（Mock + Provider 抽象）**
 
 ## 目标
 
-让用户 **浏览精选音色** 并 **跨账号使用**，为后续交易市场打基础。
+让用户 **浏览精选音色**、**跨账号授权**、**模拟购买与验真**，为真实支付/KYC 生产化打基础。
+
+## Phase 进度
+
+| Phase | 主题 | 状态 |
+|-------|------|------|
+| 1 | 邀请码 + 质量门禁 (REQ-015) | ✅ 迁移 022 |
+| 2 | project_type / CSV 情感列 / 卖家统计 | ✅ |
+| 3 | 授权书审核 UI + 站内通知 + 驳回原因 | ✅ 迁移 023 |
+| 4 | 支付 Provider 抽象 | ✅ mock / wechat / alipay 占位 |
+| 5 | KYC / 水印 / 指纹 | ✅ SaaS + manual；指纹 DB（024）；MOS Spike 文档 |
+| 6 | Open API Webhook + 开发者 Web | ✅ |
 
 ## 已实现（本切片）
 
@@ -106,7 +117,9 @@ Web：**/creator/:userId** — 标签筛选与音色馆一致；音色馆卡片�
 |-----|------|
 | 发布时带 `license_type` / `price_cents` / `included_chars` / `prohibited_domains` | 上架即配置 LicensePolicy |
 | `PATCH /catalog/voices/{id}/license` | Owner 更新定价（已购订单快照不变） |
-| `POST /catalog/voices/{id}/purchase` | 模拟支付，生成 `voice_authorizations` |
+| `POST /catalog/voices/{id}/checkout` | 预下单（Provider 抽象） |
+| `POST /payments/orders/{id}/mock-confirm` | Mock 确认（`PAYMENT_PROVIDER=mock`） |
+| `POST /catalog/voices/{id}/purchase` | 同步购买（`PAYMENT_CHECKOUT_ASYNC=true` 时 409） |
 | `GET /authorizations` | 买家我的授权 |
 | `GET /authorizations/{id}/certificate` | JSON 授权凭证（含 HMAC 签章） |
 | `GET /authorizations/{id}/verify` | 公开验真 |
@@ -149,7 +162,23 @@ python scripts/smoke_mvp1_purchase.py
 - [x] **定价与授权（REQ-016–018）**：模拟购买、JSON 凭证、公开验真页 `/verify/:id`
 - [x] **侵权投诉下架（REQ-020）**：`POST /complaints`、运营下架 + 撤销授权
 
-## 下一步（MVP+1 第三切片候选）
+## 下一步（生产化）
+
+### 已完成（支付除外）
+
+- [x] 三方 KYC SaaS（`SaasKycProvider` + `POST /kyc/webhooks/saas`）
+- [x] 水印 MOS Spike 与算法选型（`scripts/watermark_mos_spike.py`）
+- [x] Developer Webhook 投递重试 / 审计（`webhook_deliveries` + 运营台「Webhook 投递」）
+- [x] 候补名单运营一键发码（API + `/admin` UI）
+- [x] Smoke：`scripts/smoke_mvp1_waitlist.py`
+
+### 暂缓（支付）
+
+- [ ] 微信/支付宝真实预下单上线配置
+- [ ] 支付宝/微信 notify 验签与自动发货
+- [ ] 真实 TTS 样本听感 AB（水印 MOS ≥4.0）
+
+## 历史切片（已完成）
 
 - [x] REQ-006 相似度测评 / AB 试听（mock + `/quality` 页）
 - [x] 授权凭证 PDF 导出
@@ -162,13 +191,31 @@ python scripts/smoke_mvp1_purchase.py
 
 ## 本地 Smoke 速查
 
+需先执行迁移 **022–026**。
+
 ```powershell
 .\scripts\platform_start.ps1
 python scripts/smoke_mvp1_open_api.py
 python scripts/smoke_mvp1_checkout.py
 python scripts/smoke_mvp1_kyc.py
 python scripts/smoke_mvp1_purchase.py
+python scripts/smoke_mvp1_grant.py
+python scripts/smoke_mvp1_waitlist.py
+pytest tests/test_marketplace_invite.py tests/test_marketplace_waitlist_admin.py tests/test_kyc_saas.py tests/test_kyc_saas_webhook.py tests/test_developer_webhook.py tests/test_webhook_delivery.py tests/test_webhook_deliveries_admin.py -q
 ```
+
+### 配置速查
+
+| 变量 | 默认 | 说明 |
+|------|------|------|
+| `MARKETPLACE_INVITE_REQUIRED` | true | 上架需邀请码 |
+| `MARKETPLACE_QUALITY_GATE` | true | 上架需 quality_pass |
+| `PAYMENT_PROVIDER` | mock | mock / wechat / alipay |
+| `KYC_MOCK` | true | false → manual pending + 运营审核 |
+| `KYC_PROVIDER` | auto | auto / mock / manual / saas |
+| `KYC_SAAS_SUBMIT_URL` | — | 配置后 auto 优先走 SaaS |
+| `PAYMENT_NOTIFY_BASE_URL` | — | 微信/支付宝 notify 公网根 URL |
+| `FINGERPRINT_AUTO_ENROLL` | true | 合规导出后自动入库指纹 |
 
 ## 相关
 

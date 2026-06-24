@@ -35,6 +35,7 @@ def test_checkout_api(client):
             provider="mock",
             provider_ref="chk_abc",
             checkout_url="/api/v1/payments/orders/x/mock-confirm",
+            qr_code_url=None,
             authorization_id=None,
         )
         r = client.post(

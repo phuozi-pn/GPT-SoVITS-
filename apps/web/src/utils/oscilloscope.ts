@@ -27,6 +27,34 @@ export function drawPaperGrid(ctx: CanvasRenderingContext2D, w: number, h: numbe
   ctx.stroke();
 }
 
+/** Dark rack scope — matches Studio / page-surface theme */
+export function drawStudioGrid(ctx: CanvasRenderingContext2D, w: number, h: number): void {
+  ctx.fillStyle = "rgb(18 21 26 / 0.92)";
+  ctx.fillRect(0, 0, w, h);
+
+  ctx.strokeStyle = "rgb(255 255 255 / 0.05)";
+  ctx.lineWidth = 1;
+  const step = 20;
+  for (let x = 0; x <= w; x += step) {
+    ctx.beginPath();
+    ctx.moveTo(x + 0.5, 0);
+    ctx.lineTo(x + 0.5, h);
+    ctx.stroke();
+  }
+  for (let y = 0; y <= h; y += step) {
+    ctx.beginPath();
+    ctx.moveTo(0, y + 0.5);
+    ctx.lineTo(w, y + 0.5);
+    ctx.stroke();
+  }
+
+  ctx.strokeStyle = "rgb(255 255 255 / 0.08)";
+  ctx.beginPath();
+  ctx.moveTo(0, h / 2 + 0.5);
+  ctx.lineTo(w, h / 2 + 0.5);
+  ctx.stroke();
+}
+
 export function buildScopePoints(
   width: number,
   height: number,

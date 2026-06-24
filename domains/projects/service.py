@@ -152,6 +152,27 @@ class ProjectService:
         )
 
 
+def _optional_str(row: dict, fields: dict[str, str], *keys: str) -> str | None:
+    for key in keys:
+        col = fields.get(key.lower())
+        if not col:
+            continue
+        value = (row.get(col) or "").strip()
+        if value:
+            return value
+    return None
+
+
+def _optional_float(row: dict, fields: dict[str, str], *keys: str) -> float | None:
+    raw = _optional_str(row, fields, *keys)
+    if raw is None:
+        return None
+    try:
+        return float(raw)
+    except ValueError as exc:
+        raise ProjectServiceError("CSV_INVALID", f"Invalid numeric value '{raw}'", 400) from exc
+
+
 def _parse_csv(csv_bytes: bytes, role_map: dict[str, UUID]) -> list[BatchLinePayload]:
     text = csv_bytes.decode("utf-8-sig")
     reader = csv.DictReader(io.StringIO(text))
@@ -192,6 +213,10 @@ def _parse_csv(csv_bytes: bytes, role_map: dict[str, UUID]) -> list[BatchLinePay
                 role=role,
                 text=line_text,
                 voice_version_id=role_map[role],
+                speed_factor=_optional_float(row, fields, "speed", "语速", "speed_factor"),
+                emotion=_optional_str(row, fields, "emotion", "情感"),
+                emotion_strength=_optional_float(row, fields, "emotion_strength", "情感强度", "strength"),
+                pause_duration=_optional_float(row, fields, "pause", "停顿", "pause_duration"),
             )
         )
 

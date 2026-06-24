@@ -66,15 +66,14 @@ def bucket_sentences(sentences: list[str], n_buckets: int) -> list[str]:
     return buckets[:n_buckets]
 
 
-def slice_wav_dataset(
-    *,
+def slice_wav_into_segments(
     wav_path: Path,
-    ref_text: str,
     out_dir: Path,
+    *,
     segment_sec: float = 12.0,
     min_segment_sec: float = 6.0,
-) -> list[tuple[str, str]]:
-    """Slice long wav + ref_text into (segment_wav_path, text) pairs."""
+) -> list[Path]:
+    """Split long wav into fixed-duration chunks (no text assignment)."""
     frames, rate, channels, sampwidth = _read_wav(wav_path)
     frame_bytes = channels * sampwidth
     total_frames = len(frames) // frame_bytes
@@ -83,7 +82,7 @@ def slice_wav_dataset(
     if duration <= 15.0:
         seg_path = out_dir / wav_path.name
         _write_wav(seg_path, frames=frames, rate=rate, channels=channels, sampwidth=sampwidth)
-        return [(str(seg_path.resolve()), ref_text.strip())]
+        return [seg_path.resolve()]
 
     seg_frames = max(int(segment_sec * rate), 1)
     min_frames = int(min_segment_sec * rate)
@@ -95,16 +94,42 @@ def slice_wav_dataset(
         else:
             chunks.append(frames[start * frame_bytes : end * frame_bytes])
 
-    sentences = split_sentences(ref_text)
-    texts = bucket_sentences(sentences, len(chunks))
-    pairs: list[tuple[str, str]] = []
     out_dir.mkdir(parents=True, exist_ok=True)
-    for i, (chunk, text) in enumerate(zip(chunks, texts)):
-        if not text.strip():
-            continue
+    paths: list[Path] = []
+    for i, chunk in enumerate(chunks):
         seg_path = out_dir / f"seg_{i:04d}.wav"
         _write_wav(seg_path, frames=chunk, rate=rate, channels=channels, sampwidth=sampwidth)
-        pairs.append((str(seg_path.resolve()), text.strip()))
+        paths.append(seg_path.resolve())
+    if not paths:
+        raise RuntimeError("audio slice produced no segments")
+    return paths
+
+
+def slice_wav_dataset(
+    *,
+    wav_path: Path,
+    ref_text: str,
+    out_dir: Path,
+    segment_sec: float = 12.0,
+    min_segment_sec: float = 6.0,
+) -> list[tuple[str, str]]:
+    """Slice long wav + ref_text into (segment_wav_path, text) pairs."""
+    seg_paths = slice_wav_into_segments(
+        wav_path,
+        out_dir,
+        segment_sec=segment_sec,
+        min_segment_sec=min_segment_sec,
+    )
+    if len(seg_paths) == 1 and wav_duration_sec(wav_path) <= 15.0:
+        return [(str(seg_paths[0]), ref_text.strip())]
+
+    sentences = split_sentences(ref_text)
+    texts = bucket_sentences(sentences, len(seg_paths))
+    pairs: list[tuple[str, str]] = []
+    for seg_path, text in zip(seg_paths, texts):
+        if not text.strip():
+            continue
+        pairs.append((str(seg_path), text.strip()))
     if not pairs:
         raise RuntimeError("dataset slice produced no segments")
     return pairs

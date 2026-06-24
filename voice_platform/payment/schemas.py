@@ -16,6 +16,7 @@ class CheckoutResponse(BaseModel):
     provider: str
     provider_ref: str
     checkout_url: str | None = None
+    qr_code_url: str | None = None
     authorization_id: UUID | None = None
 
 

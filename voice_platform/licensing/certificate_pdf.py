@@ -18,6 +18,18 @@ class AuthorizationPdf(FPDF):
         self.cell(0, 10, "Voice Studio - AI synthesis authorization record", align="C")
 
 
+def _qr_png_bytes(url: str) -> bytes:
+    import qrcode
+
+    qr = qrcode.QRCode(version=1, box_size=4, border=2)
+    qr.add_data(url)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
 def build_authorization_pdf(cert: AuthorizationCertificateResponse) -> bytes:
     pdf = AuthorizationPdf()
     pdf.set_auto_page_break(auto=True, margin=15)
@@ -27,6 +39,21 @@ def build_authorization_pdf(cert: AuthorizationCertificateResponse) -> bytes:
 
     pdf.set_font("Helvetica", size=11)
     pdf.ln(4)
+
+    if cert.verify_url:
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.multi_cell(pdf.epw, 6, "Public verification (scan QR or open URL):")
+        try:
+            qr_buf = BytesIO(_qr_png_bytes(cert.verify_url))
+            pdf.image(qr_buf, w=40)
+            pdf.ln(2)
+        except Exception:
+            pass
+        pdf.set_font("Helvetica", size=10)
+        pdf.set_text_color(0, 80, 160)
+        pdf.multi_cell(pdf.epw, 5, cert.verify_url)
+        pdf.set_text_color(0, 0, 0)
+        pdf.ln(3)
 
     issued = cert.issued_at.isoformat() if cert.issued_at else "-"
     expires = cert.expires_at.isoformat() if cert.expires_at else "none"

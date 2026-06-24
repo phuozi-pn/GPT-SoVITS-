@@ -31,6 +31,9 @@ class ConsentRow(Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reject_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reviewed_by: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -103,6 +106,7 @@ class VoiceCatalogEntryRow(Base):
         "prohibited_domains", JSONB, default=list
     )
     policy_version: Mapped[int] = mapped_column(nullable=False, default=1)
+    reject_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

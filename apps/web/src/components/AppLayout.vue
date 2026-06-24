@@ -4,6 +4,7 @@ import { RouterLink } from "vue-router";
 import AppTopBar from "@/components/AppTopBar.vue";
 import OnboardingWelcome from "@/components/OnboardingWelcome.vue";
 import RequestBar from "@/components/RequestBar.vue";
+import StudioJobBanner from "@/components/StudioJobBanner.vue";
 import ToastContainer from "@/components/ToastContainer.vue";
 import { useWorkspaceShell } from "@/composables/useWorkspaceShell";
 import { useOnboarding } from "@/composables/useOnboarding";
@@ -185,6 +186,7 @@ const helpLinks = computed(() => [
 
     <div class="app-shell__main">
       <RequestBar />
+      <StudioJobBanner />
       <AppTopBar />
       <main class="app-shell__content">
         <div class="app-shell__slot-frame">

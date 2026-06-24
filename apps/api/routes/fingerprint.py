@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from apps.api.deps import get_current_user_id
+from apps.api.deps import get_current_user_id, get_session
 from domains.fingerprint.service import FingerprintService
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from sqlalchemy.orm import Session
 from voice_platform.fingerprint.schemas import (
     FingerprintEnrollRequest,
     FingerprintEnrollResponse,
@@ -16,17 +17,15 @@ from voice_platform.fingerprint.schemas import (
 
 router = APIRouter()
 
-# Module-level singleton service (in-memory store shared across requests)
-_service = FingerprintService()
-
 
 @router.post("/fingerprint/enroll", response_model=FingerprintEnrollResponse)
 def enroll(
     body: FingerprintEnrollRequest,
     user_id: UUID = Depends(get_current_user_id),
+    session: Session = Depends(get_session),
 ) -> FingerprintEnrollResponse:
     """Register an audio fingerprint from a WAV file for later search."""
-    return _service.enroll(
+    return FingerprintService(session).enroll(
         user_id=body.user_id or user_id,
         job_id=body.job_id,
         voice_id=body.voice_id,
@@ -39,6 +38,7 @@ def enroll_audio(
     file: UploadFile = File(...),
     job_id: str = Form(...),
     user_id: UUID = Depends(get_current_user_id),
+    session: Session = Depends(get_session),
 ) -> FingerprintEnrollResponse:
     """Upload a WAV file and register its fingerprint directly."""
     if not file.filename or not file.filename.lower().endswith(".wav"):
@@ -49,7 +49,7 @@ def enroll_audio(
     except Exception as exc:
         raise HTTPException(status_code=400, detail={"code": "READ_ERROR", "message": str(exc)}) from exc
 
-    return _service.enroll_audio(
+    return FingerprintService(session).enroll_audio(
         wav_bytes=wav_bytes,
         job_id=UUID(job_id),
         user_id=user_id,
@@ -62,6 +62,7 @@ def search(
     threshold: float = Form(0.05),
     max_results: int = Form(10),
     _user_id: UUID = Depends(get_current_user_id),
+    session: Session = Depends(get_session),
 ) -> FingerprintSearchResponse:
     """Search for matching fingerprints by uploading a WAV file."""
     if not file.filename or not file.filename.lower().endswith(".wav"):
@@ -72,7 +73,7 @@ def search(
     except Exception as exc:
         raise HTTPException(status_code=400, detail={"code": "READ_ERROR", "message": str(exc)}) from exc
 
-    return _service.search(
+    return FingerprintService(session).search(
         wav_bytes=wav_bytes,
         threshold=threshold,
         max_results=max_results,
@@ -80,6 +81,9 @@ def search(
 
 
 @router.get("/fingerprint/status", response_model=FingerprintStatusResponse)
-def status(_user_id: UUID = Depends(get_current_user_id)) -> FingerprintStatusResponse:
+def status(
+    _user_id: UUID = Depends(get_current_user_id),
+    session: Session = Depends(get_session),
+) -> FingerprintStatusResponse:
     """Get fingerprint store status."""
-    return _service.status()
+    return FingerprintService(session).status()

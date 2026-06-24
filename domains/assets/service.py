@@ -3,7 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 from uuid import UUID
 
-from domains.assets.qc import AssetQcError, run_qc
+from domains.assets.errors import AssetQcError
+from domains.assets.qc import run_qc
+from domains.assets.ref_text import resolve_upload_ref_text
 from voice_platform.config import get_settings
 from voice_platform.job.repository import VoiceRepository
 from voice_platform.job.schemas import (
@@ -56,12 +58,35 @@ class AssetService:
             ext=ext,
         )
 
+        abs_file = Path(abs_path)
         try:
-            qc = run_qc(path=Path(abs_path), filename=filename, ref_text=ref_text)
+            qc = run_qc(path=abs_file, filename=filename, ref_text=None)
         except AssetQcError:
             self._voices.delete_asset(asset.id)
-            Path(abs_path).unlink(missing_ok=True)
+            abs_file.unlink(missing_ok=True)
+            abs_file.with_suffix(".wav").unlink(missing_ok=True)
             raise
+
+        wav_path = abs_file.with_suffix(".wav")
+        if not wav_path.is_file():
+            wav_path = abs_file
+
+        resolved_ref, ref_auto, asr_provider, asr_issues = resolve_upload_ref_text(
+            wav_path,
+            ref_text,
+            settings=settings,
+        )
+        qc = qc.model_copy(
+            update={
+                "ref_text": resolved_ref,
+                "ref_text_auto": ref_auto,
+                "asr_provider": asr_provider,
+                "issues": [*qc.issues, *asr_issues],
+            }
+        )
+
+        if wav_path.is_file() and wav_path.resolve() != abs_file.resolve():
+            storage_uri = f"local://{Path(str(owner_user_id)) / 'training' / f'{asset.id}.wav'}"
 
         qc_passed = qc.status == "passed"
         updated = self._voices.update_asset_qc(

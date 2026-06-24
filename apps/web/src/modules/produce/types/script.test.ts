@@ -9,6 +9,8 @@ import {
   segmentsFromScreenplay,
   splitSegmentWithTune,
   uniqueCharacters,
+  validateSynthesisScript,
+  SYNTH_LIMITS,
 } from "./script";
 
 describe("buildSynthesisPayload", () => {
@@ -19,6 +21,12 @@ describe("buildSynthesisPayload", () => {
     expect(body.text).toBe("你好");
     expect(body.speed_factor).toBe(1.05);
     expect(body.segments).toBeUndefined();
+  });
+
+  it("fills missing segment voice from fallback", () => {
+    const seg = newSegment("", "你好");
+    const body = buildSynthesisPayload([seg], { speed: 1, temperature: 0.78 }, "voice-fallback");
+    expect(body.voice_version_id).toBe("voice-fallback");
   });
 
   it("multi voice uses segments array", () => {
@@ -102,12 +110,45 @@ describe("autoSegmentText", () => {
     const result = autoSegmentText("第一段\n\n第二段", "v1", ["v1", "v2"]);
     expect(result.mode).toBe("paragraph");
     expect(result.segments.length).toBe(2);
-    expect(result.segments[1].voiceVersionId).toBe("v2");
+    expect(result.segments[0].voiceVersionId).toBe("v1");
+    expect(result.segments[1].voiceVersionId).toBe("v1");
+  });
+
+  it("does not treat narration colon as screenplay", () => {
+    const line = "茶凉了。我合上书本，在心里默默说了一句：今天，也要好好过。";
+    expect(looksLikeScreenplay(line)).toBe(false);
+    const lines = parseScreenplayScript(line);
+    expect(lines.length).toBe(1);
+    expect(lines[0].character).toBe("旁白");
+    expect(lines[0].text).toBe(line);
   });
 
   it("keeps short plain text as single segment", () => {
     const result = autoSegmentText("你好世界", "v1", ["v1", "v2"]);
     expect(result.mode).toBe("single");
     expect(result.segments.length).toBe(1);
+  });
+});
+
+describe("validateSynthesisScript", () => {
+  const global = { speed: 1, temperature: 0.78 };
+
+  it("rejects empty script", () => {
+    const r = validateSynthesisScript([newSegment("v1", "  ")], global);
+    expect(r.ok).toBe(false);
+  });
+
+  it("rejects single text over 5000", () => {
+    const r = validateSynthesisScript([newSegment("v1", "a".repeat(5001))], global);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.message).toContain("5000");
+  });
+
+  it("rejects segment over 2000 in multi mode", () => {
+    const a = newSegment("v1", "短");
+    const b = newSegment("v1", "x".repeat(2001));
+    const r = validateSynthesisScript([a, b], global);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.message).toContain("2000");
   });
 });

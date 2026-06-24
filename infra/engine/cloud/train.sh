@@ -27,15 +27,31 @@ DATASET="$OUT_DIR/dataset"
 EXP="cloud_${JOB_ID//[^a-zA-Z0-9_]/_}"
 EXP="${EXP:0:32}"
 
+PYTHON="${CLOUD_TRAIN_PYTHON:-}"
+if [[ -z "$PYTHON" ]]; then
+  for cmd in python3 python; do
+    if command -v "$cmd" &>/dev/null; then
+      PYTHON="$cmd"
+      break
+    fi
+  done
+fi
+if [[ -z "$PYTHON" ]]; then
+  echo "python3/python not found on remote GPU (set CLOUD_TRAIN_PYTHON)" >&2
+  exit 127
+fi
+echo "Using Python: $PYTHON ($($PYTHON --version 2>&1))"
+
 echo "== 1/2 prepare dataset (slice + FunASR) =="
-python "$PREPARE" \
+"$PYTHON" "$PREPARE" \
   --engine-root "$ENGINE_ROOT" \
   --wav "$WAV" \
   --out-dir "$DATASET" \
   --language "${TRAIN_ASR_LANGUAGE:-zh}"
 
-echo "== 2/2 spike train (4+4 epochs default) =="
-python "$SPIKE" \
+echo "== 2/2 spike train (8+8 FP32 default) =="
+export is_half=False
+"$PYTHON" "$SPIKE" \
   --engine-root "$ENGINE_ROOT" \
   --job-id "$JOB_ID" \
   --list-file "$DATASET/train.list" \

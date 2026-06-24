@@ -2,8 +2,8 @@
 
 GPT-SoVITS 语音克隆及合成系统 · 项目文档总览。
 
-> **全仓库结构**（含 `infra/`、`apps/`、Docker Hub 引擎）：见 [../README.md](../README.md)  
-> **W1 代码与本地运行**：见 [../apps/api/README.md](../apps/api/README.md)
+> **结项状态与答辩入口**：[PROJECT_STATUS.md](./PROJECT_STATUS.md)  
+> **全仓库结构**：见 [../README.md](../README.md) · **实训 Word 包**：[../deliverables/](../deliverables/)
 
 按 **治理 → 调研 → 需求 → 架构 → 项目管理 → 模板** 分层存放。
 
@@ -11,10 +11,10 @@ GPT-SoVITS 语音克隆及合成系统 · 项目文档总览。
 
 ```
 GPT/                          # 仓库根 — 见 ../README.md
+├── deliverables/             # 实训提交 Word 包（01–07）
 ├── docs/                     # 本目录
-├── infra/                    # 平台 PG/Redis + 引擎 Docker 说明
-├── apps/ domains/ voice_platform/ workers/
-├── scripts/ prompts/ .cursor/
+├── infra/ apps/ domains/ voice_platform/ workers/
+└── scripts/ prompts/ .cursor/
 ```
 
 ## 文档类型对照
@@ -33,11 +33,12 @@ GPT/                          # 仓库根 — 见 ../README.md
 
 ## 快速链接
 
-### 治理
+### 治理与收尾
 
 | 文档 | 说明 |
 |------|------|
 | [PROJECT_CHARTER.md](./PROJECT_CHARTER.md) | MVP-0 范围、指标、合规不可砍 |
+| [PROJECT_STATUS.md](./PROJECT_STATUS.md) | **结项状态、演示路径、交付对照、待办** |
 
 ### 调研
 
@@ -79,24 +80,26 @@ GPT/                          # 仓库根 — 见 ../README.md
 |------|------|
 | [templates/README.md](./templates/README.md) | Word 与 reference 说明 |
 
-## 实现进度快照（W1）
+## 实现进度（截至 2026-06-24）
 
-| 能力 | 文档 | 代码/验证 |
-|------|------|-----------|
-| 零样本推理 Spike | [w1-spike](./architecture/2026-06-03-w1-spike-v2pro-快速验证.md) | Docker CU128-Lite ✅ |
-| 微调 4+4 Spike | 同上 §4.5 / §4.7 | 容器闭环 ✅ · 9880 试听 ✅ |
-| 单条合成 API + Worker | [apps/api/README](../apps/api/README.md) | Mock + 9880 ✅ |
-| 训练 API + Worker | 同上 + [engine §11](../infra/engine/README.md) | Mock ✅；真微调 Spike ✅ |
-| JWT / 配额 | 模块 A | `voice_platform/auth` `quota` ✅ |
-| 合规门禁 | 模块 B/G | `domains/compliance` + pytest ✅ |
-| Web 复古制作台 | [页面规范](./architecture/2026-06-10-web-ui-page-spec-复古录音室页面规范.md) | `apps/web` ✅ |
+完整矩阵见 **[PROJECT_STATUS.md](./PROJECT_STATUS.md)**。摘要：
+
+| 能力 | 文档 | 状态 |
+|------|------|------|
+| 上传→QC→训练→合成 | [W2 闭环](./architecture/2026-06-03-w2-upload-train-闭环.md) | ✅ |
+| CSV 批量 + 合规 ZIP | [E2E 验收](./architecture/2026-06-10-mvp0-e2e-验收记录.md) | ✅ |
+| 云端 GPU 微调 | [GPU 训练指南](./architecture/2026-06-10-云端GPU训练指南.md) | ✅ |
+| 云端一键编排 | [编排 MVP](./architecture/2026-06-22-云端训练一键编排-MVP.md) | ✅ MVP |
+| 音色馆 + VoiceGrant | [MVP+1](./architecture/2026-06-18-MVP+1音色馆与VoiceGrant.md) | ✅ 第一切片 |
+| Web 工作台 | [页面地图](./architecture/2026-06-16-web-frontend-工作流与页面地图.md) | ✅ |
 
 ## 维护约定
 
 - 新增调研 → `research/` + 更新 `research/README.md`
 - 新增 / 变更 SRS → `requirements/` + 更新 `requirements/README.md`
 - 子模块变更 → `requirements/modules/`
-- PM 对外文档 → `pm/` + 必要时更新 `templates/word/` 中对应 `.doc`
+- PM 对外文档 → `pm/` 或同步 `deliverables/` 对应目录
+- 结项检查 → 更新 [PROJECT_STATUS.md](./PROJECT_STATUS.md)
 - 详见 [.cursor/rules/30-docs-versioning.mdc](../.cursor/rules/30-docs-versioning.mdc)
 
 ## 仓库外相关

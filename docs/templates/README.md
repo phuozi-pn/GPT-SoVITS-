@@ -1,31 +1,20 @@
 # 文档模板
 
-公司标准模板的存放位置，与 `docs/pm/` 下 Markdown 交付物一一对应。  
-学校提交用完整目录（含 04 设计、06 答辩、07 日常报告）见 [../../deliverables/](../../deliverables/)。
+公司标准 Word 模板与 `docs/pm/` Markdown 主稿对应。  
+**学校完整提交包**（含 04 设计、06 答辩、07 日常报告）见 [../../deliverables/](../../deliverables/)。
 
-## Word 正式模板（`.doc`）
+## Word 模板（`word/`）
 
-路径：`word/`
+| 文件 | 对应 PM Markdown | 学校提交目录 |
+|------|------------------|--------------|
+| `03_…_Project Start Report_V1.0.doc` | [立项](../pm/2026-06-01-立项文档.md) | `deliverables/01_项目立项/` |
+| `03_…_Software Project Planning(simple)_V1.0.doc` | [计划](../pm/2026-06-01-项目计划文档.md) | `deliverables/02_项目计划/` |
+| `03_…__Software Requirement Specification_V1.0.doc` | [需求分析](../pm/2026-06-01-需求分析文档.md) | `deliverables/03_需求规格/` |
+| `实训个人周报--模版.doc` | — | `deliverables/07_日常报告/` |
 
-| 文件 | 对应 PM Markdown |
-|------|-------------------|
-| `03_GPT-SoVITS语音克隆及合成系统_Project Start Report_V1.0.doc` | [pm/2026-06-01-立项文档.md](../pm/2026-06-01-立项文档.md) |
-| `03_GPT-SoVITS语音克隆及合成系统_Software Project Planning(simple)_V1.0.doc` | [pm/2026-06-01-项目计划文档.md](../pm/2026-06-01-项目计划文档.md) |
-| `03_GPT-SoVITS语音克隆及合成系统__Software Requirement Specification_V1.0.doc` | [pm/2026-06-01-需求分析文档.md](../pm/2026-06-01-需求分析文档.md) |
-
-**工作流**：在 Markdown 中维护内容 → 复制/排版进 Word 模板 → 可选导出至 [pm/exports/](../pm/exports/)（不提交 Git）。
-
-## Markdown 参考结构（`reference/`）
-
-由 Word 模板转换的章节骨架，仅供对照模板章节，**不以之为准**；正式内容以 `docs/pm/*.md` 与 `docs/requirements/` 为准。
-
-| 文件 | 说明 |
-|------|------|
-| `Project_Start_Report_V1.0.template.md` | 立项报告章节结构 |
-| `Software_Project_Planning_simple_V1.0.template.md` | 项目计划章节结构 |
-| `Software_Requirement_Specification_V1.0.template.md` | 需求规格章节结构 |
+**工作流**：在 `docs/pm/*.md` 维护正文 → 同步至 Word（`deliverables/` 或 `word/`）→ 本地 docx 导出放 [pm/exports/](../pm/exports/)（不提交 Git）。
 
 ## 说明
 
-- 本项目 **不提交 `.docx`** 生成物（曾移除）；需要 docx 时在本地 Word 另存。
+- 正式内容以 `docs/pm/`、`docs/requirements/` 为准；`reference/` 章节骨架已移除，避免三份正文漂移。
 - 模板文件名前缀 `03_` 为公司文档编号习惯，保持不变。

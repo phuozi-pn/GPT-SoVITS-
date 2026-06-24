@@ -25,6 +25,7 @@ architecture/
 
 | 场景 | 入口 |
 |------|------|
+| **结项 / 答辩** | [PROJECT_STATUS.md](../PROJECT_STATUS.md) |
 | 第一次了解 | [架构设计导读](./2026-06-03-system-architecture-design-系统架构设计.md) |
 | 评审 / 周报 | [06-设计理由与评审](./sections/06-设计理由与评审.md) |
 | 只想要摘要 | [系统架构速览](./2026-06-03-system-architecture-系统架构说明.md) |

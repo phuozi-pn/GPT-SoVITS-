@@ -2,8 +2,8 @@
 
 | 项 | 内容 |
 |----|------|
-| **版本** | v2.1 |
-| **日期** | 2026-06-03 |
+| **版本** | v2.3 |
+| **日期** | 2026-06-24 |
 | **完整设计** | [系统架构设计导读](./2026-06-03-system-architecture-design-系统架构设计.md) → `sections/` 分章 |
 | **引擎** | GPT-SoVITS **`20250606v2pro`** · `model_tag=gsv-v2pro-20250606` |
 | **W1 代码** | [apps/api/README.md](../../apps/api/README.md) |
@@ -15,6 +15,7 @@
 | v1.0–v1.2 | 2026-06-03 | 合并版（已迁入分章文档） |
 | v2.0 | 2026-06-03 | 收敛为一页纸；细节见 `sections/` |
 | v2.2 | 2026-06-03 | 容器微调 Spike 4+4 闭环（`manual-spike-001`） |
+| v2.3 | 2026-06-24 | MVP-0 全量交付 + MVP+1 第一切片；见 [PROJECT_STATUS](../PROJECT_STATUS.md) |
 
 ---
 
@@ -23,7 +24,7 @@
 1. **产品**：短剧多角色配音工作台，4 周 MVP-0 验证训练+合成+合规闭环。  
 2. **分层**：Web → API → ComplianceGateway → Job 队列 → GPU Worker → v2Pro。  
 3. **边界**：合规/CSV/项目自研；训练推理走 Worker，不 fork 模型仓库。  
-4. **交付波次**：W1 Core ✅ → W2 CSV 批量 → W3 合规导出。  
+4. **交付波次**：W1–W4 MVP-0 ✅ · MVP+1 音色馆第一切片 ✅ · 云端训练编排 MVP ✅。  
 5. **包名**：横切层 Python 包 **`voice_platform`**（非 `platform`）。
 
 ---

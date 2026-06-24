@@ -2,7 +2,9 @@
 
 面向 AI 短剧的多角色语音克隆工作台（MVP-0 · 4 周）。本仓库为 **产品文档 + 平台工程** monorepo；**GPT-SoVITS 引擎** 在上游仓库 / Docker / 云端 GPU 单独部署。
 
-> **实现状态（v0.1）**：✅ 后端 W1+W2 · ✅ Web 工作台（Studio / 音色库 / 批量配音）· 本机 **合成**（9880）；**微调在云端 GPU** 完成。
+> **实现状态（v0.2 · 2026-06-24）**：✅ MVP-0 全链路（授权→训练→合成→合规导出）· ✅ Web 工作台 · ✅ 音色馆 MVP+1 第一切片 · ✅ 云端训练编排 MVP · 本机 **合成**（9880）；完整微调推荐 **云端 GPU**。
+
+👉 **[项目收尾状态](docs/PROJECT_STATUS.md)** · **[实训交付物包](deliverables/)**
 
 **GitHub**：https://github.com/phuozi-pn/GPT-SoVITS-
 
@@ -40,9 +42,13 @@ GPT/
 
 | 用途 | 路径 |
 |------|------|
+| **项目收尾 / 答辩** | [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md) |
+| **实训 Word 提交包** | [deliverables/](deliverables/) |
 | **云端训练** | [docs/architecture/2026-06-10-云端GPU训练指南.md](docs/architecture/2026-06-10-云端GPU训练指南.md) |
+| **云端一键编排** | [docs/architecture/2026-06-22-云端训练一键编排-MVP.md](docs/architecture/2026-06-22-云端训练一键编排-MVP.md) |
 | **权重导入 + 批量配音** | [docs/architecture/2026-06-14-云端权重接入Web合成.md](docs/architecture/2026-06-14-云端权重接入Web合成.md) |
 | 本机重启（API + Web + 9880） | [docs/architecture/2026-06-09-本地环境完整重启指南.md](docs/architecture/2026-06-09-本地环境完整重启指南.md) |
+| 对外演示脚本 | [docs/architecture/2026-06-19-对外演示路径冻结.md](docs/architecture/2026-06-19-对外演示路径冻结.md) |
 | 架构索引 | [docs/architecture/README.md](docs/architecture/README.md) |
 | 平台 API | [apps/api/README.md](apps/api/README.md) |
 | 引擎 Docker（合成） | [infra/engine/README.md](infra/engine/README.md) |
@@ -137,8 +143,11 @@ bash infra/engine/cloud/train.sh /root/train_10min.wav /root/train_out my-voice-
 | W1 Core | Spike + API/Job + 合成 | ✅ |
 | W2 Workflow | 上传/QC + Web + 权重导入 + CSV 批量 | ✅ |
 | W3 | 合规导出、敏感词 | ✅ |
-| W4 | CI、部署文档 | ✅ |
-| MVP+1 | 音色馆 + VoiceGrant | 🚧 第一切片 |
+| W4 | 部署文档、E2E、模块化 | ✅ |
+| MVP+1 | 音色馆 + VoiceGrant + 支付/KYC/Webhook 骨架 | ✅ 第一切片 |
+| 云端编排 | SSH 微调 + 本机 ASR 预处理 | ✅ MVP |
+
+详见 [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md)。
 
 ## 仓库外路径
 

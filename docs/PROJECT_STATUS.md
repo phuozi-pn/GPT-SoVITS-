@@ -40,7 +40,8 @@
 
 | 读者 | 入口 |
 |------|------|
-| 新同学 / 答辩评委 | [README.md](../README.md) → 本文件 |
+| **新电脑安装** | [从零安装指南](./从零安装指南.md) |
+| 新同学 / 答辩评委 | [README.md](../README.md) → [PROJECT_STATUS.md](./PROJECT_STATUS.md) |
 | 范围与指标 | [PROJECT_CHARTER.md](./PROJECT_CHARTER.md) |
 | 实现验收 | [SRS v1.2](./requirements/2026-06-01-mvp-voice-platform-需求规格说明.md) |
 | 架构设计 | [架构导读](./architecture/2026-06-03-system-architecture-design-系统架构设计.md) |

@@ -21,6 +21,7 @@ GPT/                          # 仓库根 — 见 ../README.md
 
 | 用途 | 读哪份 | 格式 |
 |------|--------|------|
+| 新电脑从零安装 | **[从零安装指南.md](./从零安装指南.md)** |
 | 范围与 4 周冻结 | [PROJECT_CHARTER.md](./PROJECT_CHARTER.md) | Markdown |
 | 市场 / 竞品 / 合规调研 | [research/](./research/) | Markdown |
 | 研发验收、API、测试 | [requirements/2026-06-01-mvp-voice-platform-需求规格说明.md](./requirements/2026-06-01-mvp-voice-platform-需求规格说明.md) | Markdown（SRS v1.2） |

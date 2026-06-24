@@ -8,6 +8,8 @@
 
 **GitHub**：https://github.com/phuozi-pn/GPT-SoVITS-
 
+> **新电脑从零安装** → **[docs/从零安装指南.md](docs/从零安装指南.md)**（Git / Python / Docker / Node 一步步）
+
 ## 工作流（当前推荐）
 
 | 环节 | 在哪里 |
@@ -42,6 +44,7 @@ GPT/
 
 | 用途 | 路径 |
 |------|------|
+| **新电脑从零安装** | **[docs/从零安装指南.md](docs/从零安装指南.md)** |
 | **项目收尾 / 答辩** | [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md) |
 | **实训 Word 提交包** | [deliverables/](deliverables/) |
 | **云端训练** | [docs/architecture/2026-06-10-云端GPU训练指南.md](docs/architecture/2026-06-10-云端GPU训练指南.md) |
@@ -55,17 +58,27 @@ GPT/
 
 ## 克隆与安装
 
+> 完整图文步骤见 **[docs/从零安装指南.md](docs/从零安装指南.md)**。下面是命令摘要。
+
 > 所有脚本请在 **仓库根目录** `GPT/` 下执行，不要在上一级 `Desktop/` 运行。
 
 ```powershell
-git clone git@github.com:phuozi-pn/GPT-SoVITS-.git GPT
+git clone https://github.com/phuozi-pn/GPT-SoVITS-.git GPT
 cd GPT
 
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install -e .
+pip install -e ".[dev]"
 copy .env.example .env
+
+# 终端 1：平台（需 Docker Desktop 已启动）
+.\scripts\dev_restart.ps1 -Background
+
+# 终端 2：Web
+.\scripts\web_dev.ps1
 ```
+
+浏览器打开 http://127.0.0.1:5173/studio 。真实 AI 合成需额外配置 9880 引擎，见安装指南 §7。
 
 ## 本机快速开始
 

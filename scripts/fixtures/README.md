@@ -4,6 +4,9 @@
 |------|------|
 | `guzhenren_batch_20.csv` | 20 行龙宫台词，端到端试单（全成功） |
 | `guzhenren_batch_mixed.csv` | 含 1 行敏感词，验证行级失败 + 其余成功 |
+| `shortdrama_3roles_ep01.csv` | 12 行三角色（掌柜/侠客/旁白），短剧批量方案示例 |
+
+人声分离（快速克隆前预处理，非 CSV）见 `scripts/separate_vocals_demucs.py` 与 [快速克隆与素材预处理指南](../docs/architecture/2026-06-27-快速克隆与素材预处理指南.md)。
 
 表头：`role,text` 或 `角色,台词`。角色名须与项目绑定一致。
 

@@ -1,13 +1,30 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import { LICENSE_TYPES, type Authorization, type CatalogEntry, type VoiceGrant, type VoiceSummary } from "@/api/catalog";
+import CatalogCoverEditor from "@/modules/voice/components/CatalogCoverEditor.vue";
+import CatalogAvatar from "@/components/CatalogAvatar.vue";
 import type { PublishEligibility, SellerAuthorizationStats } from "@/api/marketplace";
 import type { SellerWallet } from "@/api/settlement";
 import type { VoiceVersionSummary } from "@/api/library";
 import AppModal from "@/components/AppModal.vue";
 import type { CatalogManageModal, CheckoutSummary } from "@/modules/voice/composables/useCatalogManage";
+import {
+  VOICE_GENDER_TAG_PRESETS,
+  VOICE_SCENE_TAG_PRESETS,
+  VOICE_TRAIT_TAG_PRESETS,
+  catalogTagsToString,
+  formatCatalogTagTiers,
+  parseCatalogTags,
+  resolveGenderTag,
+  rolesForGender,
+  toggleCatalogTagLogical,
+  traitHintsForRoles,
+  validateCatalogTags,
+  voiceRoleTags,
+} from "@/utils/catalogDisplay";
 import { catalogStatusLabel, shortUserId } from "@/utils/catalogDisplay";
 
-defineProps<{
+const props = defineProps<{
   activeModal: CatalogManageModal;
   loading: boolean;
   selectedEntry: CatalogEntry | null;
@@ -25,6 +42,7 @@ defineProps<{
   publishTitle: string;
   publishDescription: string;
   publishTags: string;
+  publishCoverUrl: string;
   publishDemoText: string;
   publishLicenseType: string;
   publishPriceYuan: string;
@@ -39,6 +57,10 @@ defineProps<{
   inviteCode: string;
   waitlistContact: string;
   waitlistNote: string;
+  editingEntry: CatalogEntry | null;
+  editTitle: string;
+  editTags: string;
+  editCoverUrl: string;
   versionOptionLabel: (v: VoiceVersionSummary) => string;
   devUserPresets: ReadonlyArray<{ readonly id: string; readonly label: string }>;
   prohibitedDomainOptions: readonly string[];
@@ -53,6 +75,9 @@ const emit = defineEmits<{
   revokeGrant: [grantId: string];
   approve: [catalogId: string];
   reject: [catalogId: string];
+  editEntry: [entry: CatalogEntry];
+  saveEditEntry: [];
+  entryCoverUpdated: [entry: CatalogEntry];
   redeemInvite: [];
   joinWaitlist: [];
   exportCertificate: [authId: string];
@@ -63,6 +88,7 @@ const emit = defineEmits<{
   "update:publishTitle": [v: string];
   "update:publishDescription": [v: string];
   "update:publishTags": [v: string];
+  "update:publishCoverUrl": [v: string];
   "update:publishDemoText": [v: string];
   "update:publishLicenseType": [v: string];
   "update:publishPriceYuan": [v: string];
@@ -74,8 +100,45 @@ const emit = defineEmits<{
   "update:inviteCode": [v: string];
   "update:waitlistContact": [v: string];
   "update:waitlistNote": [v: string];
+  "update:editTitle": [v: string];
+  "update:editTags": [v: string];
+  "update:editCoverUrl": [v: string];
   goLibrary: [];
 }>();
+
+const parsedPublishTags = computed(() => parseCatalogTags(props.publishTags));
+const publishGender = computed(() => resolveGenderTag(parsedPublishTags.value));
+const publishRoleOptions = computed(() => rolesForGender(publishGender.value));
+const publishValidation = computed(() => validateCatalogTags(parsedPublishTags.value));
+const publishTagPreview = computed(() => formatCatalogTagTiers(parsedPublishTags.value));
+const publishTraitHints = computed(() => traitHintsForRoles(voiceRoleTags(parsedPublishTags.value)));
+
+const publishCoverUrlProxy = computed({
+  get: () => props.publishCoverUrl,
+  set: (v: string) => emit("update:publishCoverUrl", v),
+});
+
+const editCoverUrlProxy = computed({
+  get: () => props.editCoverUrl,
+  set: (v: string) => emit("update:editCoverUrl", v),
+});
+
+function togglePublishTag(tag: string) {
+  const next = toggleCatalogTagLogical(parsedPublishTags.value, tag);
+  emit("update:publishTags", catalogTagsToString(next));
+}
+
+const parsedEditTags = computed(() => parseCatalogTags(props.editTags));
+const editGender = computed(() => resolveGenderTag(parsedEditTags.value));
+const editRoleOptions = computed(() => rolesForGender(editGender.value));
+const editValidation = computed(() => validateCatalogTags(parsedEditTags.value));
+const editTagPreview = computed(() => formatCatalogTagTiers(parsedEditTags.value));
+const editTraitHints = computed(() => traitHintsForRoles(voiceRoleTags(parsedEditTags.value)));
+
+function toggleEditTag(tag: string) {
+  const next = toggleCatalogTagLogical(parsedEditTags.value, tag);
+  emit("update:editTags", catalogTagsToString(next));
+}
 </script>
 
 <template>
@@ -144,14 +207,94 @@ const emit = defineEmits<{
           @input="emit('update:publishTitle', ($event.target as HTMLInputElement).value)"
         />
       </label>
-      <label>
-        标签（逗号分隔）
-        <input
-          :value="publishTags"
-          placeholder="短剧, 男声, 反派"
-          @input="emit('update:publishTags', ($event.target as HTMLInputElement).value)"
-        />
+      <label class="span-2 catalog-tag-form">
+        <span class="catalog-tag-form__title">标签（按顺序打标）</span>
+        <p class="hint catalog-tag-form__logic">
+          逻辑：性别 → 适配音色 → 声线质感 → 场景。买家按此顺序理解你的音色。
+        </p>
+        <p class="catalog-tag-form__preview">
+          <span class="catalog-tag-form__preview-label">当前</span>
+          {{ publishTagPreview }}
+        </p>
+
+        <span class="catalog-tag-form__step">① 性别（必选 1 个）</span>
+        <span class="tag-chips">
+          <button
+            v-for="tag in VOICE_GENDER_TAG_PRESETS"
+            :key="tag"
+            type="button"
+            class="tag-chip tag-chip--gender"
+            :class="{ 'tag-chip--active': parsedPublishTags.includes(tag) }"
+            @click="togglePublishTag(tag)"
+          >
+            {{ tag }}
+          </button>
+        </span>
+
+        <span class="catalog-tag-form__step">② 适配音色（必选 1–4 个，须与性别匹配）</span>
+        <p v-if="!publishGender" class="hint catalog-tag-form__hint">请先选择性别；或点角色将自动补全性别</p>
+        <span class="tag-chips">
+          <button
+            v-for="tag in publishRoleOptions"
+            :key="tag"
+            type="button"
+            class="tag-chip tag-chip--role"
+            :class="{ 'tag-chip--active': parsedPublishTags.includes(tag) }"
+            @click="togglePublishTag(tag)"
+          >
+            {{ tag }}
+          </button>
+        </span>
+
+        <span class="catalog-tag-form__step">③ 声线质感（建议 2–3 个）</span>
+        <p v-if="publishTraitHints.length" class="hint catalog-tag-form__hint">
+          已选角色常见搭配：{{ publishTraitHints.join("、") }}
+        </p>
+        <span class="tag-chips">
+          <button
+            v-for="tag in VOICE_TRAIT_TAG_PRESETS"
+            :key="tag"
+            type="button"
+            class="tag-chip tag-chip--trait"
+            :class="{ 'tag-chip--active': parsedPublishTags.includes(tag) }"
+            @click="togglePublishTag(tag)"
+          >
+            {{ tag }}
+          </button>
+        </span>
+
+        <span class="catalog-tag-form__step">④ 适用场景（可选 1–2 个，用于筛选）</span>
+        <span class="tag-chips">
+          <button
+            v-for="tag in VOICE_SCENE_TAG_PRESETS"
+            :key="tag"
+            type="button"
+            class="tag-chip"
+            :class="{ 'tag-chip--active': parsedPublishTags.includes(tag) }"
+            @click="togglePublishTag(tag)"
+          >
+            {{ tag }}
+          </button>
+        </span>
+
+        <ul v-if="publishValidation.errors.length || publishValidation.warnings.length" class="catalog-tag-form__msgs">
+          <li v-for="msg in publishValidation.errors" :key="msg" class="catalog-tag-form__msg catalog-tag-form__msg--error">
+            {{ msg }}
+          </li>
+          <li v-for="msg in publishValidation.warnings" :key="msg" class="catalog-tag-form__msg">
+            {{ msg }}
+          </li>
+        </ul>
       </label>
+      <div class="span-2 catalog-cover-section">
+        <span class="catalog-tag-form__title">封面头像</span>
+        <CatalogCoverEditor
+          :title="publishTitle"
+          :tags="parsedPublishTags"
+          :disabled="loading"
+          v-model:cover-url="publishCoverUrlProxy"
+        />
+      </div>
       <label class="span-2">
         简介
         <textarea
@@ -229,9 +372,140 @@ const emit = defineEmits<{
   <AppModal :open="activeModal === 'submissions'" label="记录" title="我的发布" @close="emit('close')">
     <ul class="grant-list">
       <li v-for="s in mySubmissions" :key="s.catalog_id">
-        <span>{{ s.title }} · {{ catalogStatusLabel(s.status) }}</span>
+        <div class="catalog-submission-row">
+          <CatalogAvatar :entry="s" size="sm" />
+          <span>{{ s.title }} · {{ catalogStatusLabel(s.status) }}</span>
+        </div>
+        <span class="row-actions">
+          <button type="button" class="text-action" :disabled="loading" @click="emit('editEntry', s)">
+            编辑标签与封面
+          </button>
+        </span>
       </li>
     </ul>
+  </AppModal>
+
+  <AppModal
+    :open="activeModal === 'editEntry' && !!editingEntry"
+    label="编辑"
+    title="编辑发布信息"
+    wide
+    @close="emit('close')"
+  >
+    <p v-if="editingEntry" class="hint modal-hint">
+      {{ editingEntry.voice_name }} · {{ catalogStatusLabel(editingEntry.status) }} · 保存后全站同步（音色馆、创作者主页、首页精选）
+    </p>
+    <div v-if="editingEntry" class="form-grid">
+      <label class="span-2">
+        展示标题
+        <input
+          :value="editTitle"
+          placeholder="例如：蛊真人·龙宫"
+          @input="emit('update:editTitle', ($event.target as HTMLInputElement).value)"
+        />
+      </label>
+      <label class="span-2 catalog-tag-form">
+        <span class="catalog-tag-form__title">标签（按顺序打标）</span>
+        <p class="hint catalog-tag-form__logic">
+          逻辑：性别 → 适配音色 → 声线质感 → 场景。买家按此顺序理解你的音色。
+        </p>
+        <p class="catalog-tag-form__preview">
+          <span class="catalog-tag-form__preview-label">当前</span>
+          {{ editTagPreview }}
+        </p>
+
+        <span class="catalog-tag-form__step">① 性别（必选 1 个）</span>
+        <span class="tag-chips">
+          <button
+            v-for="tag in VOICE_GENDER_TAG_PRESETS"
+            :key="tag"
+            type="button"
+            class="tag-chip tag-chip--gender"
+            :class="{ 'tag-chip--active': parsedEditTags.includes(tag) }"
+            @click="toggleEditTag(tag)"
+          >
+            {{ tag }}
+          </button>
+        </span>
+
+        <span class="catalog-tag-form__step">② 适配音色（必选 1–4 个，须与性别匹配）</span>
+        <p v-if="!editGender" class="hint catalog-tag-form__hint">请先选择性别；或点角色将自动补全性别</p>
+        <span class="tag-chips">
+          <button
+            v-for="tag in editRoleOptions"
+            :key="tag"
+            type="button"
+            class="tag-chip tag-chip--role"
+            :class="{ 'tag-chip--active': parsedEditTags.includes(tag) }"
+            @click="toggleEditTag(tag)"
+          >
+            {{ tag }}
+          </button>
+        </span>
+
+        <span class="catalog-tag-form__step">③ 声线质感（建议 2–3 个）</span>
+        <p v-if="editTraitHints.length" class="hint catalog-tag-form__hint">
+          已选角色常见搭配：{{ editTraitHints.join("、") }}
+        </p>
+        <span class="tag-chips">
+          <button
+            v-for="tag in VOICE_TRAIT_TAG_PRESETS"
+            :key="tag"
+            type="button"
+            class="tag-chip tag-chip--trait"
+            :class="{ 'tag-chip--active': parsedEditTags.includes(tag) }"
+            @click="toggleEditTag(tag)"
+          >
+            {{ tag }}
+          </button>
+        </span>
+
+        <span class="catalog-tag-form__step">④ 适用场景（可选 1–2 个，用于筛选）</span>
+        <span class="tag-chips">
+          <button
+            v-for="tag in VOICE_SCENE_TAG_PRESETS"
+            :key="tag"
+            type="button"
+            class="tag-chip"
+            :class="{ 'tag-chip--active': parsedEditTags.includes(tag) }"
+            @click="toggleEditTag(tag)"
+          >
+            {{ tag }}
+          </button>
+        </span>
+
+        <ul v-if="editValidation.errors.length || editValidation.warnings.length" class="catalog-tag-form__msgs">
+          <li v-for="msg in editValidation.errors" :key="msg" class="catalog-tag-form__msg catalog-tag-form__msg--error">
+            {{ msg }}
+          </li>
+          <li v-for="msg in editValidation.warnings" :key="msg" class="catalog-tag-form__msg">
+            {{ msg }}
+          </li>
+        </ul>
+      </label>
+      <div class="span-2 catalog-cover-section">
+        <span class="catalog-tag-form__title">封面头像</span>
+        <CatalogCoverEditor
+          :title="editTitle"
+          :tags="parsedEditTags"
+          :catalog-id="editingEntry.catalog_id"
+          :disabled="loading"
+          v-model:cover-url="editCoverUrlProxy"
+          @entry-updated="emit('entryCoverUpdated', $event)"
+        />
+      </div>
+    </div>
+    <template #footer>
+      <button class="btn btn--ghost btn--sm" type="button" @click="emit('close')">取消</button>
+      <button
+        class="btn btn--primary btn--sm"
+        type="button"
+        :disabled="loading || !editingEntry || !editValidation.ok"
+        @click="emit('saveEditEntry')"
+      >
+        保存并全站同步
+      </button>
+    </template>
   </AppModal>
 
   <AppModal :open="activeModal === 'review'" label="运营" title="审核队列" @close="emit('close')">
@@ -479,6 +753,17 @@ const emit = defineEmits<{
 </template>
 
 <style scoped>
+.catalog-cover-section {
+  display: grid;
+  gap: 10px;
+}
+
+.catalog-submission-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .checkout-status {
   display: flex;
   align-items: center;
@@ -524,5 +809,67 @@ const emit = defineEmits<{
   padding: 12px;
   background: #fff;
   border-radius: 8px;
+}
+
+.catalog-tag-form__title {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.catalog-tag-form__logic {
+  margin: 0 0 10px;
+  font-size: 13px;
+}
+
+.catalog-tag-form__preview {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border-radius: var(--radius-ui);
+  border: 1px solid rgb(196 146 58 / 0.22);
+  background: var(--bg-surface-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.catalog-tag-form__preview-label {
+  margin-right: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--color-vu-amber-deep);
+}
+
+.catalog-tag-form__step {
+  display: block;
+  margin: 14px 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-ink);
+}
+
+.catalog-tag-form__hint {
+  margin: 0 0 6px;
+  font-size: 12px;
+}
+
+.catalog-tag-form .tag-chips {
+  margin-bottom: 4px;
+}
+
+.catalog-tag-form__msgs {
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.catalog-tag-form__msg {
+  font-size: 12px;
+  color: var(--color-ink-muted);
+  line-height: 1.5;
+}
+
+.catalog-tag-form__msg--error {
+  color: var(--color-peak-red);
 }
 </style>

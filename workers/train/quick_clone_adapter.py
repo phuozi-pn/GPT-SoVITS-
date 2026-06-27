@@ -7,9 +7,11 @@ import shutil
 from pathlib import Path
 from uuid import UUID
 
+from domains.assets.ref_text import align_ref_text_to_engine_ref
 from voice_platform.config import get_db_session, get_settings
 from voice_platform.engine.dataset_slice import wav_duration_sec
 from voice_platform.engine.infer_weights import read_v2pro_base_weights
+from voice_platform.engine.infer_defaults import default_infer_metadata, quick_clone_infer_metadata
 from voice_platform.engine.paths import host_path_to_container
 from voice_platform.engine.train_dataset import trim_wav_copy
 from voice_platform.job.repository import VoiceVersionRepository
@@ -47,7 +49,6 @@ class QuickCloneTrainAdapter:
         # makes the engine leak lyrics / garbled content into synthesis.
         if duration > 15.0:
             trim_wav_copy(src, ref_out, max_sec=9.0)
-            ref_text_infer = ref_text
             logger.info(
                 "quick_clone long asset %.1fs -> head ref %s (use ref_text matching audio start)",
                 duration,
@@ -55,8 +56,23 @@ class QuickCloneTrainAdapter:
             )
         else:
             trim_wav_copy(src, ref_out, max_sec=min(9.0, max(3.0, duration)))
-            ref_text_infer = ref_text
             logger.info("quick_clone short asset %.1fs -> %s", duration, ref_out.name)
+
+        ref_text_infer, ref_aligned = align_ref_text_to_engine_ref(
+            ref_out,
+            fallback=ref_text,
+        )
+        if ref_aligned and ref_text_infer != ref_text:
+            logger.info(
+                "quick_clone ref_text aligned to trimmed ref (was %d chars, now %d)",
+                len(ref_text),
+                len(ref_text_infer),
+            )
+        elif not ref_aligned:
+            logger.warning(
+                "quick_clone using upload ref_text without ASR realign; "
+                "ensure text matches the first ~9s of audio exactly"
+            )
 
         host_ref = str(ref_out.resolve())
         container_ref = host_path_to_container(host_ref)
@@ -102,6 +118,7 @@ class QuickCloneTrainAdapter:
                     "voice_asset_id": str(payload.voice_asset_id),
                     "consent_id": str(payload.consent_id),
                     "source_duration_sec": duration,
+                    **quick_clone_infer_metadata(),
                     **(
                         {
                             "engine_gpt_weights": base_gpt,

@@ -49,7 +49,7 @@ def test_embedding_evaluate_uses_synth_and_ref():
         gs.return_value.quality_mock = False
         gs.return_value.quality_similarity_threshold = 0.90
         gs.return_value.quality_eval_sentence_count = 1
-        with patch("voice_platform.quality.engine_synth.load_ref_wav_bytes", return_value=ref_wav):
+        with patch("voice_platform.quality.engine_synth.load_ref_wav_bytes_for_voice", return_value=ref_wav):
             with patch(
                 "voice_platform.quality.engine_synth.synthesize_eval_wav",
                 return_value=synth_wav,

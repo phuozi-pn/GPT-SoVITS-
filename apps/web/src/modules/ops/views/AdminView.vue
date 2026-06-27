@@ -1,11 +1,15 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import { QUOTA_TIERS } from "@/constants/quotaTiers";
 import { useRouter } from "vue-router";
 import {
   dismissComplaint,
   fetchAdminComplaints,
   fetchAdminJobs,
   fetchAdminPayments,
+  fetchAdminUsageReport,
+  updateAdminUserQuota,
+  type UserUsageReportRow,
   fetchPlatformStats,
   resolveComplaintTakedown,
   type AdminComplaint,
@@ -46,6 +50,8 @@ import {
 } from "@/api/developer";
 import { DEV_ADMIN_USER_ID, getDevUserId } from "@/api/catalog";
 import PageHero from "@/components/PageHero.vue";
+import QuotaUsageMeters from "@/components/QuotaUsageMeters.vue";
+import { formatTokenVolumeWithUnit } from "@/utils/quotaDisplay";
 import PageSurface from "@/components/PageSurface.vue";
 import RackPanel from "@/modules/voice/components/studio/RackPanel.vue";
 import AppModal from "@/components/AppModal.vue";
@@ -71,6 +77,12 @@ const pendingConsents = ref<ConsentAdminSummary[]>([]);
 const inviteCodes = ref<InviteCodeSummary[]>([]);
 const waitlistEntries = ref<WaitlistEntrySummary[]>([]);
 const webhookDeliveries = ref<WebhookDeliverySummary[]>([]);
+const usageReport = ref<UserUsageReportRow[]>([]);
+const usageMonth = ref("");
+const quotaEditUser = ref<UserUsageReportRow | null>(null);
+const quotaCharLimit = ref("");
+const quotaTrainLimit = ref("");
+const quotaSaving = ref(false);
 const inviteCode = ref("");
 const inviteMaxUses = ref(5);
 const inviteNote = ref("");
@@ -86,7 +98,7 @@ const loading = ref(false);
 const error = ref("");
 const toast = ref("");
 
-type AdminModal = "" | "complaints" | "kyc" | "payouts" | "payments" | "consents" | "consentReject" | "invites" | "webhooks";
+type AdminModal = "" | "complaints" | "kyc" | "payouts" | "payments" | "consents" | "consentReject" | "invites" | "webhooks" | "quota";
 const activeModal = ref<AdminModal>("");
 
 function openModal(id: AdminModal) {
@@ -95,6 +107,38 @@ function openModal(id: AdminModal) {
 
 function closeModal() {
   activeModal.value = "";
+  quotaEditUser.value = null;
+}
+
+function openQuotaEdit(row: UserUsageReportRow) {
+  quotaEditUser.value = row;
+  quotaCharLimit.value = String(row.monthly_char_limit);
+  quotaTrainLimit.value = String(row.monthly_train_limit);
+  activeModal.value = "quota";
+}
+
+function applyQuotaTier(tier: (typeof QUOTA_TIERS)[number]) {
+  quotaCharLimit.value = String(tier.monthly_char_limit);
+  quotaTrainLimit.value = String(tier.monthly_train_limit);
+}
+
+async function saveQuotaEdit() {
+  if (!quotaEditUser.value) return;
+  quotaSaving.value = true;
+  error.value = "";
+  try {
+    await updateAdminUserQuota(quotaEditUser.value.user_id, {
+      monthly_char_limit: Number(quotaCharLimit.value),
+      monthly_train_limit: Number(quotaTrainLimit.value),
+    });
+    toast.value = "配额已更新";
+    closeModal();
+    await reload();
+  } catch (e) {
+    error.value = formatApiError(e);
+  } finally {
+    quotaSaving.value = false;
+  }
 }
 
 const isAdmin = computed(() => getDevUserId() === DEV_ADMIN_USER_ID);
@@ -160,7 +204,7 @@ async function reload() {
   loading.value = true;
   error.value = "";
   try {
-    const [s, j, c, k, p, po, consents, invites, waitlist] = await Promise.all([
+    const [s, j, c, k, p, po, consents, invites, waitlist, usage] = await Promise.all([
       fetchPlatformStats(),
       fetchAdminJobs({
         status: statusFilter.value || undefined,
@@ -175,6 +219,7 @@ async function reload() {
       fetchAdminPendingConsents(),
       fetchOptional(() => fetchAdminInviteCodes(), []),
       fetchOptional(() => fetchAdminWaitlist(), []),
+      fetchOptional(() => fetchAdminUsageReport(100), { billing_month: "", items: [], total: 0 }),
     ]);
     stats.value = s;
     jobs.value = j.items;
@@ -185,6 +230,8 @@ async function reload() {
     pendingConsents.value = consents;
     inviteCodes.value = invites;
     waitlistEntries.value = waitlist;
+    usageReport.value = usage.items;
+    usageMonth.value = usage.billing_month;
   } catch (e) {
     error.value = formatApiError(e);
   } finally {
@@ -360,6 +407,66 @@ onMounted(() => {
         <button class="btn btn--primary btn--sm" :disabled="loading" @click="reload">刷新</button>
       </template>
       </PageHero>
+
+      <RackPanel label="用量" :title="`用户使用量报表${usageMonth ? ` · ${usageMonth}` : ''}`">
+        <div class="admin-table-wrap">
+          <table v-if="usageReport.length" class="admin-table">
+            <thead>
+              <tr>
+                <th>用户</th>
+                <th>手机号</th>
+                <th>TTS Token</th>
+                <th>Token 上限</th>
+                <th>模型训练</th>
+                <th>训练上限</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in usageReport" :key="row.user_id">
+                <td class="mono">{{ shortId(row.user_id) }}</td>
+                <td>{{ row.phone }}</td>
+                <td>
+                  <QuotaUsageMeters
+                    :quota="{
+                      chars_used: row.chars_used,
+                      chars_remaining: row.chars_remaining,
+                      monthly_char_limit: row.monthly_char_limit,
+                      trainings_used: 0,
+                      trainings_remaining: 0,
+                      monthly_train_limit: 1,
+                    }"
+                    layout="cell"
+                    metric="chars"
+                    :show-reset="false"
+                  />
+                </td>
+                <td class="mono">{{ formatTokenVolumeWithUnit(row.monthly_char_limit) }}</td>
+                <td>
+                  <QuotaUsageMeters
+                    :quota="{
+                      chars_used: 0,
+                      chars_remaining: 0,
+                      monthly_char_limit: 1,
+                      trainings_used: row.trainings_used,
+                      trainings_remaining: row.trainings_remaining,
+                      monthly_train_limit: row.monthly_train_limit,
+                    }"
+                    layout="cell"
+                    metric="train"
+                    :show-reset="false"
+                  />
+                </td>
+                <td>{{ row.monthly_train_limit }}</td>
+                <td>
+                  <button type="button" class="text-action" @click="openQuotaEdit(row)">调整限额</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <p v-else class="hint">本月暂无用量记录</p>
+        </div>
+      </RackPanel>
 
       <RackPanel label="运维" title="任务列表">
       <div class="admin-filters">
@@ -620,6 +727,47 @@ onMounted(() => {
         <p v-else class="hint">暂无支付记录</p>
       </div>
     </AppModal>
+
+    <AppModal
+      :open="activeModal === 'quota'"
+      label="配额"
+      :title="quotaEditUser ? `调整限额 · ${quotaEditUser.phone}` : '调整限额'"
+      @close="closeModal"
+    >
+      <p v-if="quotaEditUser" class="hint">
+        本月已用：TTS Token {{ formatTokenVolumeWithUnit(quotaEditUser.chars_used) }} · 模型训练 {{ quotaEditUser.trainings_used }} 次
+      </p>
+      <div class="admin-quota-tiers">
+        <span class="field-label">套餐档位</span>
+        <div class="admin-quota-tiers__row">
+          <button
+            v-for="tier in QUOTA_TIERS"
+            :key="tier.id"
+            type="button"
+            class="btn btn--ghost btn--sm"
+            :title="tier.hint"
+            @click="applyQuotaTier(tier)"
+          >
+            {{ tier.label }}
+          </button>
+        </div>
+        <p class="hint">点选档位填入下方数值，可再手动微调后保存。</p>
+      </div>
+      <label>
+        月度 TTS Token 上限
+        <input v-model="quotaCharLimit" type="number" min="0" step="1000" />
+      </label>
+      <label>
+        月度训练次数上限
+        <input v-model="quotaTrainLimit" type="number" min="0" step="1" />
+      </label>
+      <template #footer>
+        <button class="btn btn--ghost btn--sm" type="button" :disabled="quotaSaving" @click="closeModal">取消</button>
+        <button class="btn btn--primary btn--sm" type="button" :disabled="quotaSaving" @click="saveQuotaEdit">
+          {{ quotaSaving ? "保存中…" : "保存" }}
+        </button>
+      </template>
+    </AppModal>
   </div>
 </template>
 
@@ -655,6 +803,17 @@ onMounted(() => {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--color-brushed-dark);
+}
+
+.admin-quota-tiers {
+  margin-bottom: 1rem;
+}
+
+.admin-quota-tiers__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
 }
 
 .admin-table .mono {

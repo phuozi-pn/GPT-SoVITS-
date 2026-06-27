@@ -25,7 +25,10 @@ docker compose -f docker-compose.dev.yml down
 
 ## 数据库迁移
 
-`apps/api/main.py` 启动时会按序执行 `migrations/*.sql`（幂等）：
+`apps/api/main.py` 启动时执行 `migrations/*.sql`：
+
+- 使用表 `platform_sql_migrations` **每条 SQL 只执行一次**（新库按序全跑；已有数据的库首次升级会把 034 之前的文件标记为已执行）
+- 脚本应尽量幂等；**种子/运营类迁移不得覆盖用户已设置的 `cover_image_url` 等字段**
 
 | 文件 | 内容 |
 |------|------|

@@ -22,6 +22,8 @@ import {
   rejectCatalogEntry,
   revokeVoiceGrant,
   submitComplaint,
+  updateCatalogEntry,
+  type CatalogEntry,
   type Authorization,
   type VoiceGrant,
   type VoiceSummary,
@@ -42,8 +44,9 @@ import {
   type SellerAuthorizationStats,
 } from "@/api/marketplace";
 import { fetchVoiceVersions, type VoiceVersionSummary } from "@/api/library";
+import { voiceOriginLabel } from "@/utils/voiceOriginDisplay";
 import { formatApiError } from "@/utils/apiErrors";
-import { parseCatalogTags } from "@/utils/catalogDisplay";
+import { normalizeCatalogTags, parseCatalogTags, validateCatalogTags, catalogTagsToString } from "@/utils/catalogDisplay";
 import type { CatalogBrowse } from "@/modules/voice/composables/useCatalogBrowse";
 
 export type CatalogManageModal =
@@ -56,7 +59,8 @@ export type CatalogManageModal =
   | "sales"
   | "complaint"
   | "grant"
-  | "checkout";
+  | "checkout"
+  | "editEntry";
 
 export type CheckoutSummary = {
   voiceTitle: string;
@@ -80,8 +84,8 @@ function pickPreferredVersionId(versions: VoiceVersionSummary[]): string {
 
 function versionOptionLabel(v: VoiceVersionSummary): string {
   const label = v.label ? ` (${v.label})` : "";
-  const imported = v.imported ? " · 已导入" : "";
-  return `${v.voice_name} v${v.version}${label}${imported}`;
+  const origin = voiceOriginLabel(v.train_mode, v.imported);
+  return `${v.voice_name} v${v.version} · ${origin}${label}`;
 }
 
 export function useCatalogManage(browse: CatalogBrowse) {
@@ -101,7 +105,8 @@ export function useCatalogManage(browse: CatalogBrowse) {
   const publishVersionId = ref("");
   const publishTitle = ref("蛊真人·龙宫");
   const publishDescription = ref("平台精选：004 云端微调音色");
-  const publishTags = ref("短剧, 男声, 反派");
+  const publishTags = ref("");
+  const publishCoverUrl = ref("");
   const publishDemoText = ref("方源，你给我出来！");
   const publishLicenseType = ref("personal_non_commercial");
   const publishPriceYuan = ref("0");
@@ -116,6 +121,82 @@ export function useCatalogManage(browse: CatalogBrowse) {
   const inviteCode = ref("");
   const waitlistContact = ref("");
   const waitlistNote = ref("");
+
+  const editingEntry = ref<CatalogEntry | null>(null);
+  const editTitle = ref("");
+  const editTags = ref("");
+  const editCoverUrl = ref("");
+
+  function patchLocalCatalogEntry(entry: CatalogEntry) {
+    const id = entry.catalog_id;
+    const merge = (list: CatalogEntry[]) => {
+      const i = list.findIndex((e) => e.catalog_id === id);
+      if (i >= 0) list[i] = { ...list[i], ...entry };
+    };
+    merge(browse.entries.value);
+    merge(mySubmissions.value);
+    if (editingEntry.value?.catalog_id === id) {
+      editingEntry.value = { ...editingEntry.value, ...entry };
+      editTitle.value = entry.title;
+      editTags.value = catalogTagsToString(entry.tags ?? []);
+      editCoverUrl.value = entry.cover_image_url ?? "";
+    }
+  }
+
+  function openEditEntry(entry: CatalogEntry) {
+    editingEntry.value = entry;
+    editTitle.value = entry.title;
+    editTags.value = catalogTagsToString(entry.tags ?? []);
+    editCoverUrl.value = entry.cover_image_url ?? "";
+    openModal("editEntry");
+  }
+
+  function openEditEntryById(catalogId: string) {
+    const entry =
+      browse.entries.value.find((e) => e.catalog_id === catalogId) ??
+      mySubmissions.value.find((e) => e.catalog_id === catalogId);
+    if (entry) openEditEntry(entry);
+  }
+
+  function onEntryCoverUpdated(entry: CatalogEntry) {
+    patchLocalCatalogEntry(entry);
+    void browse.focusPublishedEntry(entry.catalog_id);
+    browse.success.value = "封面已保存，请在左侧查看上架展示效果";
+  }
+
+  async function onSaveEditEntry() {
+    const entry = editingEntry.value;
+    if (!entry) return;
+    const title = editTitle.value.trim();
+    if (!title) {
+      browse.error.value = "请填写展示标题";
+      return;
+    }
+    const tags = normalizeCatalogTags(parseCatalogTags(editTags.value));
+    const tagCheck = validateCatalogTags(tags);
+    if (!tagCheck.ok) {
+      browse.error.value = tagCheck.errors.join("；");
+      return;
+    }
+    browse.error.value = "";
+    browse.success.value = "";
+    browse.loading.value = true;
+    try {
+      const updated = await updateCatalogEntry(entry.catalog_id, {
+        title,
+        tags,
+        cover_image_url: editCoverUrl.value.trim() || undefined,
+      });
+      patchLocalCatalogEntry(updated);
+      browse.success.value = "发布信息已更新，全站同步";
+      closeModal();
+      void browse.focusPublishedEntry(updated.catalog_id);
+    } catch (e) {
+      browse.error.value = formatApiError(e);
+    } finally {
+      browse.loading.value = false;
+    }
+  }
 
   let paymentPollTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -237,12 +318,19 @@ export function useCatalogManage(browse: CatalogBrowse) {
       browse.error.value = "请填写展示标题";
       return;
     }
+    const tags = normalizeCatalogTags(parseCatalogTags(publishTags.value));
+    const tagCheck = validateCatalogTags(tags);
+    if (!tagCheck.ok) {
+      browse.error.value = tagCheck.errors.join("；");
+      return;
+    }
     try {
       const entry = await publishToCatalog({
         voice_version_id: publishVersionId.value,
         title,
         description: publishDescription.value.trim(),
-        tags: parseCatalogTags(publishTags.value),
+        tags,
+        cover_image_url: publishCoverUrl.value.trim() || undefined,
         featured: true,
         demo_text: publishDemoText.value.trim(),
         license_type: publishLicenseType.value,
@@ -506,6 +594,10 @@ export function useCatalogManage(browse: CatalogBrowse) {
     }
   }
 
+  function onRegenerateCover(catalogId: string) {
+    openEditEntryById(catalogId);
+  }
+
   function dismissCheckout() {
     stopPaymentPoll();
     checkoutSummary.value = null;
@@ -553,6 +645,7 @@ export function useCatalogManage(browse: CatalogBrowse) {
     publishTitle,
     publishDescription,
     publishTags,
+    publishCoverUrl,
     publishDemoText,
     publishLicenseType,
     publishPriceYuan,
@@ -567,6 +660,10 @@ export function useCatalogManage(browse: CatalogBrowse) {
     inviteCode,
     waitlistContact,
     waitlistNote,
+    editingEntry,
+    editTitle,
+    editTags,
+    editCoverUrl,
     activeModal,
     ownedVersions,
     isAdmin,
@@ -587,6 +684,11 @@ export function useCatalogManage(browse: CatalogBrowse) {
     onApprove,
     onReject,
     onRegenerateDemo,
+    onRegenerateCover,
+    openEditEntry,
+    openEditEntryById,
+    onSaveEditEntry,
+    onEntryCoverUpdated,
     onRedeemInvite,
     onJoinWaitlist,
     dismissCheckout,

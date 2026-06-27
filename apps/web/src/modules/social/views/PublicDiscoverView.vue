@@ -29,6 +29,10 @@ function goCatalogPublic(catalogId: string) {
   goCatalogPick(catalogId, hasAppSession() ? "/catalog" : "/browse");
 }
 
+function goCreator(authorUserId: string) {
+  router.push(`/creator/${authorUserId}`);
+}
+
 function goLogin() {
   router.push({ path: "/login", query: { redirect: "/discover/feed" } });
 }
@@ -72,6 +76,7 @@ onMounted(() => {
       :loading-more="loadingMore"
       :next-before="nextBefore"
       @catalog-pick="goCatalogPublic"
+      @creator="goCreator"
       @load-more="() => loadMore(20)"
     />
   </div>

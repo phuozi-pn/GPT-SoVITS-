@@ -3,12 +3,11 @@ import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { fetchCatalog, fetchCatalogTags, formatPriceCents, type CatalogEntry } from "@/api/catalog";
 import { apiJson } from "@/api/client";
-import TapePlayer from "@/modules/voice/components/studio/TapePlayer.vue";
+import CatalogHeroCard from "@/components/CatalogHeroCard.vue";
 import PublicPageHead from "@/modules/public/components/PublicPageHead.vue";
 import ShareLink from "@/modules/public/components/ShareLink.vue";
 import { formatApiError } from "@/utils/apiErrors";
 import { catalogAppPath, catalogPurchasePath, loginToCatalogQuery } from "@/utils/catalogLinks";
-import { licenseLabel } from "@/utils/catalogDisplay";
 import { hasAppSession } from "@/utils/session";
 
 const route = useRoute();
@@ -26,23 +25,28 @@ const selectedId = ref("");
 const showFeatured = ref(true);
 const catalogStats = ref({ total_voices: 0, featured_voices: 0, tags_count: 0 });
 
-const selected = computed(() => entries.value.find((e) => e.catalog_id === selectedId.value));
+const displayEntries = computed(() => {
+  if (selectedTags.value.length || !showFeatured.value || !featuredEntries.value.length) {
+    return entries.value;
+  }
+  const featuredIds = new Set(featuredEntries.value.map((e) => e.catalog_id));
+  const rest = entries.value.filter((e) => !featuredIds.has(e.catalog_id));
+  return [...featuredEntries.value, ...rest];
+});
 
-function avatarInitial(title: string) {
-  return title.trim().charAt(0) || "音";
-}
-
-function goLogin(forAction: string) {
-  router.push({ path: "/login", query: loginToCatalogQuery(selectedId.value || undefined, forAction) });
+function goLogin(forAction: string, catalogId?: string) {
+  const id = catalogId || selectedId.value || undefined;
+  router.push({ path: "/login", query: loginToCatalogQuery(id, forAction) });
 }
 
 function goAppCatalog() {
   router.push(catalogAppPath(selectedId.value || undefined));
 }
 
-function goPurchase() {
-  if (!selectedId.value) return;
-  router.push(catalogPurchasePath(selectedId.value));
+function goPurchase(catalogId?: string) {
+  const id = catalogId || selectedId.value;
+  if (!id) return;
+  router.push(catalogPurchasePath(id));
 }
 
 function selectVoice(id: string) {
@@ -50,9 +54,6 @@ function selectVoice(id: string) {
   router.replace({ query: { ...route.query, pick: id } });
 }
 
-function goCreator(userId: string) {
-  router.push(`/creator/${userId}`);
-}
 
 async function loadCatalogStats() {
   try {
@@ -126,7 +127,7 @@ watch(
   <div class="showcase-browse">
     <PublicPageHead
       title="公开音色馆"
-      hint="无需登录即可试听样音；购买授权、在线合成请登录工作台"
+      hint="精选授权音色，先试听样音；满意后登录购买，即可在工作台合成出片"
     >
       <template #actions>
         <ShareLink label="分享本页" />
@@ -150,30 +151,6 @@ watch(
         <strong>{{ catalogStats.tags_count }}</strong> 个标签分类
       </span>
     </div>
-
-    <!-- Featured section -->
-    <section v-if="showFeatured && featuredEntries.length" class="showcase-browse__featured">
-      <h3 class="showcase-browse__section-title">精选推荐</h3>
-      <div class="showcase-featured-grid">
-        <button
-          v-for="fe in featuredEntries.slice(0, 6)"
-          :key="fe.catalog_id"
-          type="button"
-          class="showcase-featured-card"
-          :class="{ 'showcase-featured-card--on': selectedId === fe.catalog_id }"
-          @click="selectVoice(fe.catalog_id)"
-        >
-          <span class="showcase-featured-card__avatar" aria-hidden="true">{{ avatarInitial(fe.title) }}</span>
-          <div class="showcase-featured-card__meta">
-            <strong class="showcase-featured-card__title">{{ fe.title }}</strong>
-            <span class="showcase-featured-card__price">{{ formatPriceCents(fe.price_cents) }}</span>
-          </div>
-          <span v-if="fe.tags.length" class="showcase-featured-card__tags">
-            <span v-for="t in fe.tags.slice(0, 2)" :key="t" class="showcase-featured-card__tag">{{ t }}</span>
-          </span>
-        </button>
-      </div>
-    </section>
 
     <div v-if="error" class="alert alert--error">{{ error }}</div>
 
@@ -207,73 +184,51 @@ watch(
 
     <p v-if="loading" class="hint">加载中…</p>
 
-    <div v-else-if="entries.length" class="showcase-browse__layout showcase-browse__layout--film">
-      <aside v-if="selected" class="showcase-browse__detail">
-        <header class="showcase-browse__detail-head">
-          <div>
-            <h2 class="showcase-preview__title">{{ selected.title }}</h2>
-            <p class="hint">{{ selected.description || selected.voice_name }}</p>
-          </div>
-
-          <div class="showcase-stamp" aria-label="授权与价格">
-            <span class="showcase-stamp__label">{{ licenseLabel(selected.license_type) }}</span>
-            <span class="showcase-stamp__price">{{ formatPriceCents(selected.price_cents) }}</span>
-            <span v-if="!selected.can_use && selected.price_cents > 0" class="showcase-stamp__state showcase-stamp__state--warn">需购买</span>
-            <span v-else-if="selected.can_use" class="showcase-stamp__state showcase-stamp__state--ok">已授权</span>
-          </div>
-        </header>
-
-        <div v-if="selected.tags.length" class="tag-line" style="margin: 10px 0 12px">
-          <span v-for="t in selected.tags" :key="t" class="tag-line__item">{{ t }}</span>
-        </div>
-
-        <TapePlayer v-if="selected.demo_audio_url" :src="selected.demo_audio_url" :height="104" />
-        <p v-else class="hint">暂无样音</p>
-
-        <div class="showcase-browse__detail-actions">
+    <div v-else-if="displayEntries.length" class="catalog-hero-grid showcase-browse__catalog">
+      <CatalogHeroCard
+        v-for="e in displayEntries"
+        :key="e.catalog_id"
+        :entry="e"
+        :selected="selectedId === e.catalog_id"
+        :show-access-pill="loggedIn"
+        :show-contact="loggedIn"
+        @select="selectVoice"
+        @load-catalog="loadCatalog"
+      >
+        <template #actions="{ entry: item }">
           <template v-if="loggedIn">
             <button
-              v-if="selected.price_cents > 0 && !selected.can_use"
+              v-if="item.price_cents > 0 && !item.can_use"
               type="button"
               class="btn btn--primary btn--sm"
-              @click="goPurchase"
+              @click.stop="goPurchase(item.catalog_id)"
             >
-              购买授权 {{ formatPriceCents(selected.price_cents) }}
+              购买授权 {{ formatPriceCents(item.price_cents) }}
             </button>
             <button
               type="button"
               class="btn btn--primary btn--sm"
-              :class="{ 'btn--ghost': selected.price_cents > 0 && !selected.can_use }"
-              @click="goAppCatalog"
+              @click.stop="router.push(catalogAppPath(item.catalog_id))"
             >
-              {{ selected.can_use || selected.price_cents === 0 ? "试听合成" : "进入音色馆" }}
+              {{ item.can_use || item.price_cents === 0 ? "试听合成" : "进入工作台" }}
             </button>
           </template>
-          <button v-else type="button" class="btn btn--primary btn--sm" @click="goLogin('purchase')">
-            登录后购买 / 合成
-          </button>
-          <span class="row-actions" style="margin-left: 12px">
-            <button type="button" class="text-action" @click="goCreator(selected.owner_user_id)">创作者</button>
-          </span>
-        </div>
-      </aside>
-
-      <ul class="showcase-filmstrip showcase-browse__filmstrip" aria-label="公开音色胶片带">
-        <li v-for="e in entries" :key="e.catalog_id">
-          <button
-            type="button"
-            class="showcase-voice-tile"
-            :class="{ 'showcase-voice-tile--on': selectedId === e.catalog_id }"
-            @click="selectVoice(e.catalog_id)"
-          >
-            <span class="showcase-voice-tile__avatar" aria-hidden="true">{{ avatarInitial(e.title) }}</span>
-            <span class="showcase-voice-tile__meta">
-              <strong>{{ e.title }}</strong>
-              <span class="hint">{{ formatPriceCents(e.price_cents) }}</span>
-            </span>
-          </button>
-        </li>
-      </ul>
+          <template v-else>
+            <button
+              type="button"
+              class="btn btn--primary btn--sm"
+              @click.stop="goLogin('purchase', item.catalog_id)"
+            >
+              {{ item.price_cents > 0 ? `购买授权 ${formatPriceCents(item.price_cents)}` : "登录免费使用" }}
+            </button>
+            <button type="button" class="text-action" @click.stop="goLogin('synth', item.catalog_id)">
+              登录后合成
+            </button>
+          </template>
+          <span class="row-actions__sep" aria-hidden="true">·</span>
+          <router-link class="text-action" :to="`/creator/${item.owner_user_id}`" @click.stop>主页</router-link>
+        </template>
+      </CatalogHeroCard>
     </div>
 
     <div v-else class="empty-state">
@@ -282,3 +237,7 @@ watch(
     </div>
   </div>
 </template>
+
+
+
+

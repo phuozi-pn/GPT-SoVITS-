@@ -744,7 +744,7 @@ function removeSegment(index: number) {
   border-color: var(--color-vu-amber);
   border-style: solid;
   background: var(--color-vu-amber-soft);
-  color: #8a5a24;
+  color: var(--theme-warm);
 }
 
 .seg-add:disabled {
@@ -957,7 +957,7 @@ function removeSegment(index: number) {
   background: var(--color-vu-amber-soft);
   font-size: 10px;
   font-weight: 500;
-  color: #8a5a24;
+  color: var(--theme-warm);
 }
 
 .editor-chip--soft {
@@ -995,7 +995,7 @@ function removeSegment(index: number) {
 .tune-status__label {
   font-size: 11px;
   font-weight: 600;
-  color: #8a5a24;
+  color: var(--theme-warm);
 }
 
 .tune-status__chip {
@@ -1004,7 +1004,7 @@ function removeSegment(index: number) {
   border: 1px solid rgb(212 146 74 / 0.45);
   background: #fff;
   font-size: 11px;
-  color: #6b4423;
+  color: var(--color-highlight);
 }
 
 .tune-status__pending {

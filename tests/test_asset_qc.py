@@ -2,12 +2,21 @@ from __future__ import annotations
 
 import io
 import wave
+from unittest.mock import patch
 
 import pytest
 
 from domains.assets.errors import AssetQcError
 from domains.assets.qc import run_qc
 from voice_platform.config import get_settings
+
+
+@pytest.fixture(autouse=True)
+def _disable_enhance_for_qc_tests(monkeypatch):
+    monkeypatch.setenv("ASSET_ENHANCE_ENABLED", "false")
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
 
 
 def _write_wav(path, *, duration_sec: float, sample_rate: int = 32000) -> None:
@@ -74,6 +83,25 @@ def test_qc_converts_mp3(tmp_path, monkeypatch):
 
     result = run_qc(path=mp3, filename="x.mp3")
     assert result.status == "passed"
+    get_settings.cache_clear()
+
+
+def test_qc_runs_enhance_when_enabled(tmp_path, monkeypatch):
+    monkeypatch.setenv("ASSET_ENHANCE_ENABLED", "true")
+    monkeypatch.setenv("QC_DEV_RELAX_DURATION", "true")
+    get_settings.cache_clear()
+
+    wav = tmp_path / "sample.wav"
+    _write_wav(wav, duration_sec=5.0)
+
+    with patch(
+        "domains.assets.qc.enhance_wav_in_place",
+        return_value={"applied": True, "profile": "clarity"},
+    ) as enhance:
+        result = run_qc(path=wav, filename="sample.wav")
+    enhance.assert_called_once()
+    assert result.audio_enhanced is True
+    assert result.enhance_note == "clarity"
     get_settings.cache_clear()
 
 

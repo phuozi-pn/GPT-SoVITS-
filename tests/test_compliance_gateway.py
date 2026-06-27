@@ -133,3 +133,21 @@ def test_train_consent_required():
             model_tag="gsv-v2pro-20250606",
         )
     assert exc.value.code == "CONSENT_REQUIRED"
+
+
+def test_precheck_texts_ok():
+    issues = GATEWAY.precheck_texts(["你好，这是一段正常台本。"])
+    assert issues == []
+
+
+def test_precheck_texts_sensitive():
+    issues = GATEWAY.precheck_texts(["这里有测试敏感词"])
+    assert len(issues) == 1
+    assert issues[0]["code"] == "SENSITIVE_WORD"
+    assert issues[0]["segment_index"] == 0
+
+
+def test_precheck_texts_segment_length():
+    long_text = "a" * 2001
+    issues = GATEWAY.precheck_texts([long_text], segmented=True)
+    assert any(i["code"] == "TEXT_TOO_LONG" for i in issues)

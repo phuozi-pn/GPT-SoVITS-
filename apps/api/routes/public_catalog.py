@@ -9,7 +9,7 @@ from apps.api.exceptions import parse_tag_query
 from domains.marketplace.service import MarketplaceService
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
-from voice_platform.job.schemas import CatalogEntryResponse
+from voice_platform.job.schemas import CatalogEntryResponse, FeaturedCreatorSummary
 
 router = APIRouter()
 
@@ -64,3 +64,16 @@ def public_catalog_stats(
         "featured_voices": len(featured),
         "tags_count": len(tags),
     }
+
+
+@router.get("/public/creators", response_model=list[FeaturedCreatorSummary])
+def list_public_featured_creators(
+    limit: int = Query(default=12, ge=1, le=50, description="Max creators to return"),
+    user_id: UUID = Depends(get_viewer_user_id),
+    session: Session = Depends(get_session),
+) -> list[FeaturedCreatorSummary]:
+    """List platform featured creators (aggregated from featured catalog voices)."""
+    return MarketplaceService(session).list_featured_creators(
+        viewer_user_id=user_id,
+        limit=limit,
+    )

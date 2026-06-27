@@ -6,6 +6,13 @@ from typing import Any
 from uuid import UUID
 
 from voice_platform.config import get_settings
+from voice_platform.engine.infer_defaults import (
+    DEFAULT_SPEED_FACTOR,
+    DEFAULT_TEMPERATURE,
+    DEFAULT_TEXT_SPLIT_METHOD,
+    DEFAULT_TOP_P,
+    default_infer_metadata,
+)
 from voice_platform.engine.train_dataset import ensure_engine_ref_wav
 from voice_platform.job.repository import VoiceVersionRepository
 from voice_platform.job.schemas import MODEL_TAG_V2PRO
@@ -23,10 +30,11 @@ class EngineWeightsRegistration:
     label: str = ""
     ref_name_prefix: str = "platform_ref"
     text_lang: str = "zh"
-    text_split_method: str = "cut0"
-    temperature: float = 0.78
-    speed_factor: float = 1.05
-    top_p: float = 1.0
+    text_split_method: str = DEFAULT_TEXT_SPLIT_METHOD
+    temperature: float = DEFAULT_TEMPERATURE
+    speed_factor: float = DEFAULT_SPEED_FACTOR
+    top_p: float = DEFAULT_TOP_P
+    imported: bool = False
     extra_metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -56,7 +64,7 @@ def register_engine_weights_version(
     label = reg.label.strip() or f"v{versions.next_version_number(reg.voice_id)}"
     metadata = {
         "mock": False,
-        "imported": True,
+        **({"imported": True} if reg.imported else {}),
         "label": label,
         "engine_gpt_weights": gpt_rel,
         "engine_sovits_weights": sovits_rel,
@@ -67,11 +75,7 @@ def register_engine_weights_version(
         "engine_root": str(engine_root),
         "text_lang": reg.text_lang,
         "prompt_lang": reg.text_lang,
-        "text_split_method": reg.text_split_method,
-        "temperature": reg.temperature,
-        "speed_factor": reg.speed_factor,
-        "top_p": reg.top_p,
-        "tune_preset": "cut0_t078_sp105",
+        **default_infer_metadata(),
         **reg.extra_metadata,
     }
     return versions.create_version(

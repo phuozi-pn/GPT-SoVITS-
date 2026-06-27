@@ -15,7 +15,7 @@ export function useWorkspaceShell() {
   const { unreadTotal } = useUnreadMessages();
 
   const isLogin = computed(() => route.name === "login");
-  const userPhone = computed(() => localStorage.getItem("user_phone") ?? "");
+  const userPhone = computed(() => localStorage.getItem("user_phone") ?? localStorage.getItem("user_email") ?? "");
   const devMode = computed(() => localStorage.getItem("dev_mode") === "1");
   const isAdmin = computed(() => getDevUserId() === DEV_ADMIN_USER_ID);
 
@@ -36,6 +36,9 @@ export function useWorkspaceShell() {
   function isActive(item: NavItem): boolean {
     if (item.name === "discover") {
       return route.path.startsWith("/discover");
+    }
+    if (item.name === "my-creator") {
+      return route.path.startsWith("/creator/") || route.path === "/me";
     }
     return route.path === item.to || route.path.startsWith(`${item.to}/`);
   }

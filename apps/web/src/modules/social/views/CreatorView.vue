@@ -11,26 +11,32 @@ import {
 } from "@/api/catalog";
 import {
   catalogDemoDownloadUrl,
-  catalogVoicePackUrl,
   downloadCatalogAsset,
+  generateCreatorAvatar,
   updateMyProfile,
 } from "@/api/social";
 import AppModal from "@/components/AppModal.vue";
+import CreatorAvatar from "@/components/CreatorAvatar.vue";
+import CatalogAvatar from "@/components/CatalogAvatar.vue";
+import CatalogHeroCard from "@/components/CatalogHeroCard.vue";
 import LoadingSpinner from "@/components/LoadingSpinner.vue";
 import PageActionBar from "@/components/PageActionBar.vue";
 import PageActionLink from "@/components/PageActionLink.vue";
 import PageSurface from "@/components/PageSurface.vue";
 import RackPanel from "@/modules/voice/components/studio/RackPanel.vue";
 import TapePlayer from "@/modules/voice/components/studio/TapePlayer.vue";
+import { useAppShell } from "@/composables/useAppShell";
+import { useCopyText } from "@/composables/useCopyText";
 import { formatApiError } from "@/utils/apiErrors";
 import { catalogAppPath, loginToCatalogQuery } from "@/utils/catalogLinks";
-import { useIsShowcaseVisitor } from "@/composables/useAppShell";
-import { useCopyText } from "@/composables/useCopyText";
+import { hasAppSession } from "@/utils/session";
 import { setPageMeta } from "@/utils/pageMeta";
 
 const route = useRoute();
 const router = useRouter();
+const shell = useAppShell();
 const { copied: shareCopied, copy: copyShareLink } = useCopyText();
+
 const profile = ref<CreatorProfile | null>(null);
 const availableTags = ref<string[]>([]);
 const selectedTags = ref<string[]>([]);
@@ -40,13 +46,18 @@ const error = ref("");
 const success = ref("");
 const editName = ref("");
 const editBio = ref("");
+const editAvatarUrl = ref("");
+const editIsPublic = ref(true);
+const avatarGenerating = ref(false);
+const avatarGenError = ref("");
 const saving = ref(false);
 const showEdit = ref(false);
 const publicSelectedId = ref("");
 
-const isShowcaseVisitor = useIsShowcaseVisitor();
-const isSelf = computed(() => userId.value === getDevUserId());
+const inWorkbench = computed(() => shell.value === "workbench");
+const hasSession = computed(() => hasAppSession());
 const userId = computed(() => String(route.params.userId ?? ""));
+const isSelf = computed(() => userId.value === getDevUserId());
 const featuredVoices = computed(() => profile.value?.voices.filter((v) => v.featured) ?? []);
 const otherVoices = computed(() => profile.value?.voices.filter((v) => !v.featured) ?? []);
 const publicSelected = computed(() => otherVoices.value.find((e) => e.catalog_id === publicSelectedId.value));
@@ -61,21 +72,15 @@ function parseTags(raw: string): string[] {
 
 function syncTagsToRoute() {
   const q = { ...route.query };
-  if (selectedTags.value.length) {
-    q.tags = selectedTags.value.join(",");
-  } else {
-    delete q.tags;
-  }
+  if (selectedTags.value.length) q.tags = selectedTags.value.join(",");
+  else delete q.tags;
   router.replace({ query: q });
 }
 
 function toggleTag(tag: string) {
   const idx = selectedTags.value.indexOf(tag);
-  if (idx >= 0) {
-    selectedTags.value.splice(idx, 1);
-  } else {
-    selectedTags.value.push(tag);
-  }
+  if (idx >= 0) selectedTags.value.splice(idx, 1);
+  else selectedTags.value.push(tag);
   tagQuery.value = selectedTags.value.join(", ");
   syncTagsToRoute();
   void loadProfile();
@@ -94,15 +99,9 @@ async function applyTagQuery() {
   await loadProfile();
 }
 
-function avatarInitial(title: string): string {
-  return title.trim().charAt(0) || "音";
-}
-
 function goMessages(voiceTitle?: string) {
   const query: Record<string, string> = { peer: userId.value };
-  if (voiceTitle) {
-    query.draft = `你好，想咨询「${voiceTitle}」的授权与合作。`;
-  }
+  if (voiceTitle) query.draft = `你好，想咨询「${voiceTitle}」的授权与合作。`;
   router.push({ path: "/community", query });
 }
 
@@ -115,21 +114,18 @@ function goLoginMessage(voiceTitle?: string) {
 }
 
 function contactCreator(voiceTitle?: string) {
-  if (isShowcaseVisitor.value) goLoginMessage(voiceTitle);
-  else goMessages(voiceTitle);
+  if (hasSession.value) goMessages(voiceTitle);
+  else goLoginMessage(voiceTitle);
 }
 
-function goCatalog(entry: CatalogEntry) {
-  if (isShowcaseVisitor.value) {
-    router.push({ path: "/browse", query: { pick: entry.catalog_id } });
-    return;
-  }
-  router.push(catalogAppPath(entry.catalog_id));
+function goCatalog(entry: CatalogEntry | string) {
+  const catalogId = typeof entry === "string" ? entry : entry.catalog_id;
+  if (inWorkbench.value) router.push(catalogAppPath(catalogId));
+  else router.push({ path: "/browse", query: { pick: catalogId } });
 }
 
 function goCatalogHub() {
-  if (isShowcaseVisitor.value) router.push("/browse");
-  else router.push("/catalog");
+  router.push(inWorkbench.value ? "/catalog" : "/browse");
 }
 
 function goLoginForCatalog(entry?: CatalogEntry) {
@@ -149,7 +145,12 @@ async function onSaveProfile() {
   error.value = "";
   success.value = "";
   try {
-    await updateMyProfile({ display_name: editName.value.trim(), bio: editBio.value.trim() });
+    await updateMyProfile({
+      display_name: editName.value.trim(),
+      bio: editBio.value.trim(),
+      avatar_url: editAvatarUrl.value.trim() || null,
+      is_public: editIsPublic.value,
+    });
     success.value = "主页已更新";
     showEdit.value = false;
     await loadProfile();
@@ -160,25 +161,33 @@ async function onSaveProfile() {
   }
 }
 
+async function onGenerateAvatar() {
+  avatarGenError.value = "";
+  avatarGenerating.value = true;
+  try {
+    const res = await generateCreatorAvatar();
+    editAvatarUrl.value = res.avatar_url;
+    success.value = "头像已生成，记得保存";
+  } catch (e) {
+    avatarGenError.value = formatApiError(e);
+  } finally {
+    avatarGenerating.value = false;
+  }
+}
+
 function openEdit() {
   if (profile.value) {
     editName.value = profile.value.display_name;
     editBio.value = profile.value.bio ?? "";
+    editAvatarUrl.value = profile.value.avatar_url ?? "";
   }
+  avatarGenError.value = "";
   showEdit.value = true;
 }
 
 async function onDownloadDemo(entry: CatalogEntry) {
   try {
     await downloadCatalogAsset(catalogDemoDownloadUrl(entry.catalog_id), `${entry.title}_demo.wav`);
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e);
-  }
-}
-
-async function onDownloadPack(entry: CatalogEntry) {
-  try {
-    await downloadCatalogAsset(catalogVoicePackUrl(entry.catalog_id), `${entry.title}_pack.zip`);
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e);
   }
@@ -195,6 +204,7 @@ async function loadProfile() {
     if (isSelf.value && profile.value) {
       editName.value = profile.value.display_name;
       editBio.value = profile.value.bio ?? "";
+      editAvatarUrl.value = profile.value.avatar_url ?? "";
     }
     const others = profile.value?.voices.filter((v) => !v.featured) ?? [];
     if (others.length && !others.some((e) => e.catalog_id === publicSelectedId.value)) {
@@ -222,295 +232,298 @@ onMounted(async () => {
   await loadProfile();
 });
 
-watch(
-  () => route.params.userId,
-  () => {
-    void loadProfile();
-  },
-);
+watch(() => route.params.userId, () => void loadProfile());
 
 watch(
   () => profile.value,
   (p) => {
-    if (!p || !isShowcaseVisitor.value) return;
-    const title = `${p.display_name} · 创作者 · Voice Studio`;
-    const desc =
-      p.bio?.trim() ||
-      `公开音色 ${p.published_count} 个 · 在 Voice Studio 浏览授权与试听样音`;
-    setPageMeta(title, desc);
+    if (!p || inWorkbench.value) return;
+    setPageMeta(
+      `${p.display_name} · 创作者 · Voice Studio`,
+      p.bio?.trim() || `公开音色 ${p.published_count} 个 · 在 Voice Studio 浏览授权与试听样音`,
+    );
   },
 );
 </script>
 
 <template>
-  <!-- 访客展示壳 -->
-  <div v-if="isShowcaseVisitor" class="showcase-creator">
+  <div :class="inWorkbench ? 'page page--full creator-page' : 'showcase-creator'">
     <div v-if="error" class="alert alert--error">{{ error }}</div>
+    <div v-if="success && inWorkbench" class="alert alert--ok">{{ success }}</div>
 
-    <p v-if="loading && !profile" class="hint">加载创作者主页…</p>
+    <component :is="inWorkbench ? PageSurface : 'div'">
+      <p v-if="loading && !profile" class="hint">加载创作者主页…</p>
 
-    <div v-if="profile" class="creator-profile-hero creator-profile-hero--showcase">
-      <div class="creator-profile-hero__avatar" aria-hidden="true">
-        {{ avatarInitial(profile.display_name) }}
-      </div>
-      <div class="creator-profile-hero__copy">
-        <p class="showcase-creator__eyebrow">创作者</p>
-        <h1 class="creator-profile-hero__name">{{ profile.display_name }}</h1>
-        <p class="creator-profile-hero__bio">{{ profile.bio || "这位创作者还没有填写简介" }}</p>
-        <p class="showcase-creator__stats hint">
-          公开音色 <strong>{{ profile.published_count }}</strong>
-          <template v-if="featuredVoices.length">
-            · 精选 <strong>{{ featuredVoices.length }}</strong>
-          </template>
-        </p>
-      </div>
-      <div class="creator-profile-hero__actions row-actions">
-        <button type="button" class="text-action" @click="shareCreatorPage">
-          {{ shareCopied ? "已复制链接" : "分享主页" }}
-        </button>
-        <span class="row-actions__sep" aria-hidden="true">·</span>
-        <button type="button" class="text-action" @click="goCatalogHub">音色馆</button>
-        <span class="row-actions__sep" aria-hidden="true">·</span>
-        <button type="button" class="text-action text-action--accent" @click="contactCreator()">登录后私信</button>
-      </div>
-    </div>
-
-    <section v-if="profile" class="showcase-section">
-      <h2 class="showcase-section__title">公开作品</h2>
-
-      <div class="showcase-browse__toolbar">
-        <input
-          v-model="tagQuery"
-          placeholder="按标签筛选，如：短剧, 男声"
-          @keyup.enter="applyTagQuery"
-        />
-        <button type="button" class="btn btn--primary btn--sm" :disabled="loading" @click="applyTagQuery">搜索</button>
-        <button v-if="selectedTags.length" type="button" class="text-action" :disabled="loading" @click="clearTagFilter">
-          清除
-        </button>
-      </div>
-
-      <div v-if="availableTags.length" class="tag-chips" style="margin-bottom: 16px">
-        <button
-          v-for="t in availableTags.slice(0, 12)"
-          :key="t"
-          type="button"
-          class="tag-chip"
-          :class="{ 'tag-chip--active': selectedTags.includes(t) }"
-          @click="toggleTag(t)"
-        >
-          {{ t }}
-        </button>
-      </div>
-
-      <div v-if="featuredVoices.length" class="showcase-creator__featured">
-        <article v-for="e in featuredVoices" :key="e.catalog_id" class="showcase-creator__featured-card">
-          <div class="showcase-creator__featured-head">
-            <span class="showcase-case__tag">精选</span>
-            <h3 class="showcase-preview__title">{{ e.title }}</h3>
-            <p class="hint">{{ e.description || e.voice_name }}</p>
-          </div>
-          <TapePlayer v-if="e.demo_audio_url" :src="e.demo_audio_url" :height="72" />
-          <p v-else class="hint">暂无样音</p>
-          <div class="row-actions showcase-creator__featured-actions">
-            <button type="button" class="text-action text-action--accent" @click="goCatalog(e)">试听详情 →</button>
-            <span class="row-actions__sep" aria-hidden="true">·</span>
-            <button type="button" class="text-action" @click="contactCreator(e.title)">咨询授权</button>
-          </div>
-        </article>
-      </div>
-
-      <div v-if="otherVoices.length" class="showcase-browse__layout" style="margin-top: 8px">
-        <ul class="showcase-browse__list">
-          <li v-for="e in otherVoices" :key="e.catalog_id">
-            <button
-              type="button"
-              class="showcase-voice-tile"
-              :class="{ 'showcase-voice-tile--on': publicSelectedId === e.catalog_id }"
-              @click="selectPublicVoice(e.catalog_id)"
-            >
-              <span class="showcase-voice-tile__avatar" aria-hidden="true">{{ avatarInitial(e.title) }}</span>
-              <span class="showcase-voice-tile__meta">
-                <strong>{{ e.title }}</strong>
-                <span class="hint">{{ formatPriceCents(e.price_cents) }}</span>
-              </span>
-            </button>
-          </li>
-        </ul>
-
-        <aside v-if="publicSelected" class="showcase-browse__detail">
-          <h3 class="showcase-preview__title">{{ publicSelected.title }}</h3>
-          <p class="hint">{{ publicSelected.description || publicSelected.voice_name }}</p>
-          <TapePlayer v-if="publicSelected.demo_audio_url" :src="publicSelected.demo_audio_url" :height="88" />
-          <p v-else class="hint">暂无样音</p>
-          <p class="hint" style="margin-top: 12px">{{ formatPriceCents(publicSelected.price_cents) }}</p>
-          <div class="showcase-browse__detail-actions">
-            <button type="button" class="btn btn--primary btn--sm" @click="goLoginForCatalog(publicSelected)">
-              登录后购买 / 合成
-            </button>
-            <span class="row-actions" style="margin-left: 12px">
-              <button type="button" class="text-action text-action--accent" @click="contactCreator(publicSelected.title)">
-                咨询
-              </button>
-            </span>
-          </div>
-        </aside>
-      </div>
-
-      <div v-if="!profile.voices.length && !loading" class="empty-state">
-        <p><strong>暂无符合筛选的公开音色</strong></p>
-      </div>
-    </section>
-  </div>
-
-  <!-- 工作台内 -->
-  <div v-else class="page page--full creator-page">
-    <div v-if="error" class="alert alert--error">{{ error }}</div>
-    <div v-if="success" class="alert alert--ok">{{ success }}</div>
-
-    <PageSurface>
-      <div v-if="profile" class="creator-profile-hero">
-      <div class="creator-profile-hero__avatar" aria-hidden="true">
-        {{ avatarInitial(profile.display_name) }}
-      </div>
-      <div class="creator-profile-hero__copy">
-        <h1 class="creator-profile-hero__name">{{ profile.display_name }}</h1>
-        <p class="creator-profile-hero__bio">{{ profile.bio || "这位创作者还没有填写简介" }}</p>
-        <p class="showcase-creator__stats hint">
-          公开音色 <strong>{{ profile.published_count }}</strong>
-          <template v-if="featuredVoices.length">
-            · 精选 <strong>{{ featuredVoices.length }}</strong>
-          </template>
-        </p>
-      </div>
-      <div class="creator-profile-hero__actions row-actions">
-        <button type="button" class="text-action" @click="shareCreatorPage">
-          {{ shareCopied ? "已复制链接" : "分享主页" }}
-        </button>
-        <span class="row-actions__sep" aria-hidden="true">·</span>
-        <router-link to="/catalog" class="text-action">音色馆</router-link>
-        <span class="row-actions__sep" aria-hidden="true">·</span>
-        <router-link to="/community" class="text-action">消息</router-link>
-        <template v-if="isSelf">
-          <span class="row-actions__sep" aria-hidden="true">·</span>
-          <button type="button" class="text-action" @click="openEdit">编辑主页</button>
-        </template>
-        <template v-else>
-          <span class="row-actions__sep" aria-hidden="true">·</span>
-          <button type="button" class="text-action text-action--accent" @click="goMessages()">发私信</button>
-        </template>
-      </div>
-      </div>
-      <p v-else-if="loading" class="hint" style="padding: 8px 0">加载创作者主页…</p>
-
-      <RackPanel label="作品" title="公开音色">
-      <div class="catalog-toolbar">
-        <div class="filter-bar catalog-toolbar__search">
-          <input
-            v-model="tagQuery"
-            placeholder="按标签筛选，如：短剧, 男声"
-            @keyup.enter="applyTagQuery"
+      <div
+        v-if="profile"
+        class="creator-profile-hero"
+        :class="{ 'creator-profile-hero--showcase': !inWorkbench }"
+      >
+        <div class="creator-profile-hero__avatar-wrap">
+          <CreatorAvatar
+            :display-name="profile.display_name"
+            :avatar-url="profile.avatar_url"
+            :user-id="profile.user_id"
+            size="lg"
           />
-          <button class="btn btn--primary btn--sm" :disabled="loading" @click="applyTagQuery">搜索</button>
-          <button
-            v-if="selectedTags.length"
-            class="text-action"
-            :disabled="loading"
-            @click="clearTagFilter"
-          >
-            清除
-          </button>
         </div>
-        <div v-if="availableTags.length" class="tag-chips catalog-toolbar__tags">
-          <button
-            v-for="t in availableTags"
-            :key="t"
-            type="button"
-            class="tag-chip"
-            :class="{ 'tag-chip--active': selectedTags.includes(t) }"
-            @click="toggleTag(t)"
-          >
-            {{ t }}
+        <div class="creator-profile-hero__copy">
+          <p v-if="!inWorkbench" class="showcase-creator__eyebrow">创作者</p>
+          <h1 class="creator-profile-hero__name">{{ profile.display_name }}</h1>
+          <p class="creator-profile-hero__bio">{{ profile.bio || "这位创作者还没有填写简介" }}</p>
+          <p class="showcase-creator__stats hint">
+            公开音色 <strong>{{ profile.published_count }}</strong>
+            <template v-if="featuredVoices.length"> · 精选 <strong>{{ featuredVoices.length }}</strong></template>
+          </p>
+        </div>
+        <div class="creator-profile-hero__actions row-actions">
+          <button type="button" class="text-action" @click="shareCreatorPage">
+            {{ shareCopied ? "已复制链接" : "分享主页" }}
           </button>
+          <span class="row-actions__sep" aria-hidden="true">·</span>
+          <button type="button" class="text-action" @click="goCatalogHub">音色馆</button>
+          <template v-if="isSelf">
+            <span class="row-actions__sep" aria-hidden="true">·</span>
+            <button type="button" class="text-action" @click="openEdit">编辑主页</button>
+          </template>
+          <template v-else-if="hasSession">
+            <span class="row-actions__sep" aria-hidden="true">·</span>
+            <button type="button" class="text-action text-action--accent" @click="contactCreator()">发私信</button>
+          </template>
+          <template v-else>
+            <span class="row-actions__sep" aria-hidden="true">·</span>
+            <button type="button" class="text-action text-action--accent" @click="contactCreator()">登录后私信</button>
+          </template>
+          <template v-if="inWorkbench && hasSession && !isSelf">
+            <span class="row-actions__sep" aria-hidden="true">·</span>
+            <router-link to="/community" class="text-action">消息</router-link>
+          </template>
         </div>
       </div>
 
-      <div v-if="featuredVoices.length" class="catalog-hero-grid">
-        <article
-          v-for="e in featuredVoices"
-          :key="e.catalog_id"
-          class="catalog-hero-card"
-          role="button"
-          tabindex="0"
-          @click="goCatalog(e)"
-          @keydown.enter="goCatalog(e)"
-        >
-          <div class="catalog-hero-card__head">
-            <div class="catalog-hero-card__avatar" aria-hidden="true">{{ avatarInitial(e.title) }}</div>
-            <div class="catalog-hero-card__meta">
-              <span class="catalog-hero-card__badge">精选</span>
-              <h2 class="catalog-hero-card__title">{{ e.title }}</h2>
-              <p class="catalog-hero-card__desc">{{ e.description || e.voice_name }}</p>
-            </div>
-          </div>
-          <div v-if="e.demo_audio_url" class="catalog-hero-card__player" @click.stop>
-            <TapePlayer :src="e.demo_audio_url" :height="72" />
-          </div>
-          <div class="catalog-hero-card__foot" @click.stop>
-            <div class="catalog-hero-card__actions row-actions">
+      <RackPanel v-if="profile" :label="inWorkbench ? '作品' : undefined" :title="inWorkbench ? '公开音色' : undefined">
+        <section :class="inWorkbench ? undefined : 'showcase-section'">
+          <h2 v-if="!inWorkbench" class="showcase-section__title">公开作品</h2>
+
+          <div :class="inWorkbench ? 'catalog-toolbar' : 'showcase-browse__toolbar'">
+            <div :class="inWorkbench ? 'filter-bar catalog-toolbar__search' : undefined">
+              <input
+                v-model="tagQuery"
+                placeholder="按标签筛选，如：短剧, 男声"
+                @keyup.enter="applyTagQuery"
+              />
               <button
-                v-if="!isSelf"
                 type="button"
-                class="text-action text-action--accent"
-                @click="goMessages(e.title)"
+                class="btn btn--primary btn--sm"
+                :disabled="loading"
+                @click="applyTagQuery"
               >
-                咨询此音色
+                搜索
               </button>
-              <span v-if="!isSelf" class="row-actions__sep" aria-hidden="true">·</span>
-              <button type="button" class="text-action" @click="goCatalog(e)">去音色馆</button>
+              <button
+                v-if="selectedTags.length"
+                type="button"
+                class="text-action"
+                :disabled="loading"
+                @click="clearTagFilter"
+              >
+                清除
+              </button>
+            </div>
+            <div
+              v-if="availableTags.length"
+              class="tag-chips"
+              :class="{ 'catalog-toolbar__tags': inWorkbench }"
+              :style="!inWorkbench ? { marginBottom: '16px' } : undefined"
+            >
+              <button
+                v-for="t in (inWorkbench ? availableTags : availableTags.slice(0, 12))"
+                :key="t"
+                type="button"
+                class="tag-chip"
+                :class="{ 'tag-chip--active': selectedTags.includes(t) }"
+                @click="toggleTag(t)"
+              >
+                {{ t }}
+              </button>
             </div>
           </div>
-        </article>
-      </div>
 
-      <ul v-if="otherVoices.length" class="catalog-grid catalog-grid--compact" style="margin-top: 16px">
-        <li v-for="e in otherVoices" :key="e.catalog_id">
-          <article class="voice-tile voice-tile--compact" role="button" tabindex="0" @click="goCatalog(e)">
-            <div class="voice-tile__top">
-              <div class="voice-tile__avatar" aria-hidden="true">{{ avatarInitial(e.title) }}</div>
-              <div class="voice-tile__meta">
-                <h3 class="voice-tile__title">{{ e.title }}</h3>
-                <p class="voice-tile__desc">{{ e.description || e.voice_name }}</p>
+          <div v-if="featuredVoices.length" :class="inWorkbench ? 'catalog-hero-grid catalog-hero-grid--stack' : 'showcase-creator__featured'">
+            <template v-if="inWorkbench">
+              <CatalogHeroCard
+                v-for="e in featuredVoices"
+                :key="e.catalog_id"
+                :entry="e"
+                :show-contact="false"
+                :tag-limit="5"
+                @select="goCatalog"
+                @load-catalog="loadProfile"
+              >
+                <template #actions>
+                  <button type="button" class="btn btn--primary btn--sm" @click.stop="goCatalog(e.catalog_id)">
+                    试听合成
+                  </button>
+                  <button type="button" class="text-action text-action--accent" @click.stop="goCatalog(e.catalog_id)">
+                    去音色馆
+                  </button>
+                  <template v-if="!isSelf">
+                    <span class="row-actions__sep" aria-hidden="true">·</span>
+                    <button type="button" class="text-action" @click.stop="contactCreator(e.title)">咨询授权</button>
+                  </template>
+                </template>
+              </CatalogHeroCard>
+            </template>
+            <template v-else>
+              <article
+                v-for="e in featuredVoices"
+                :key="e.catalog_id"
+                class="showcase-creator__featured-card"
+              >
+              <div class="showcase-creator__featured-head">
+                <span class="showcase-case__tag">精选</span>
+                <h3 class="showcase-preview__title">{{ e.title }}</h3>
+                <p class="hint">{{ e.description || e.voice_name }}</p>
               </div>
-            </div>
-            <div v-if="e.demo_audio_url" class="voice-tile__audio" @click.stop>
-              <TapePlayer :src="e.demo_audio_url" :height="52" />
-            </div>
-            <div class="voice-tile__actions row-actions" @click.stop>
-              <button v-if="!isSelf" type="button" class="text-action text-action--accent" @click="goMessages(e.title)">
-                咨询
-              </button>
-              <span v-if="!isSelf" class="row-actions__sep" aria-hidden="true">·</span>
-              <button type="button" class="text-action" @click="onDownloadDemo(e)">样音</button>
-            </div>
-          </article>
-        </li>
-      </ul>
+              <div v-if="e.demo_audio_url" @click.stop>
+                <TapePlayer :src="e.demo_audio_url" :height="72" />
+              </div>
+              <p v-else class="hint">暂无样音</p>
+              <div class="row-actions showcase-creator__featured-actions" @click.stop>
+                <button type="button" class="text-action text-action--accent" @click="goCatalog(e.catalog_id)">
+                  试听详情 →
+                </button>
+                <span v-if="!isSelf" class="row-actions__sep" aria-hidden="true">·</span>
+                <button v-if="!isSelf" type="button" class="text-action" @click="contactCreator(e.title)">
+                  咨询授权
+                </button>
+              </div>
+              </article>
+            </template>
+          </div>
 
-      <div v-if="!profile?.voices.length" class="empty-state">
-        <LoadingSpinner v-if="loading" inline text="加载创作者主页…" />
-        <p v-else>该创作者暂无符合筛选的公开音色</p>
-      </div>
+          <div
+            v-if="otherVoices.length"
+            :class="inWorkbench ? 'catalog-more' : 'showcase-browse__layout'"
+            :style="!inWorkbench ? { marginTop: '8px' } : undefined"
+          >
+            <h3 v-if="inWorkbench" class="catalog-more__title">
+              更多作品
+              <span class="hint">（{{ otherVoices.length }}）</span>
+            </h3>
+            <div v-if="inWorkbench" class="catalog-hero-grid catalog-hero-grid--stack">
+              <CatalogHeroCard
+                v-for="e in otherVoices"
+                :key="e.catalog_id"
+                :entry="e"
+                :show-contact="false"
+                :tag-limit="5"
+                @select="goCatalog"
+                @load-catalog="loadProfile"
+              >
+                <template #actions>
+                  <button type="button" class="btn btn--primary btn--sm" @click.stop="goCatalog(e.catalog_id)">
+                    试听合成
+                  </button>
+                  <button type="button" class="text-action text-action--accent" @click.stop="goCatalog(e.catalog_id)">
+                    去音色馆
+                  </button>
+                  <template v-if="!isSelf">
+                    <span class="row-actions__sep" aria-hidden="true">·</span>
+                    <button type="button" class="text-action" @click.stop="contactCreator(e.title)">咨询授权</button>
+                  </template>
+                </template>
+              </CatalogHeroCard>
+            </div>
+
+            <template v-else>
+              <ul class="showcase-browse__list">
+                <li v-for="e in otherVoices" :key="e.catalog_id">
+                  <button
+                    type="button"
+                    class="showcase-voice-tile"
+                    :class="{ 'showcase-voice-tile--on': publicSelectedId === e.catalog_id }"
+                    @click="selectPublicVoice(e.catalog_id)"
+                  >
+                    <CatalogAvatar :entry="e" size="sm" class="showcase-voice-tile__avatar-wrap" />
+                    <span class="showcase-voice-tile__meta">
+                      <strong>{{ e.title }}</strong>
+                      <span class="hint">{{ formatPriceCents(e.price_cents) }}</span>
+                    </span>
+                  </button>
+                </li>
+              </ul>
+              <aside v-if="publicSelected" class="showcase-browse__detail">
+                <h3 class="showcase-preview__title">{{ publicSelected.title }}</h3>
+                <p class="hint">{{ publicSelected.description || publicSelected.voice_name }}</p>
+                <TapePlayer
+                  v-if="publicSelected.demo_audio_url"
+                  :src="publicSelected.demo_audio_url"
+                  :height="88"
+                />
+                <p v-else class="hint">暂无样音</p>
+                <p class="hint" style="margin-top: 12px">{{ formatPriceCents(publicSelected.price_cents) }}</p>
+                <div class="showcase-browse__detail-actions">
+                  <button
+                    v-if="hasSession"
+                    type="button"
+                    class="btn btn--primary btn--sm"
+                    @click="goCatalog(publicSelected)"
+                  >
+                    去音色馆购买 / 合成
+                  </button>
+                  <button v-else type="button" class="btn btn--primary btn--sm" @click="goLoginForCatalog(publicSelected)">
+                    登录后购买 / 合成
+                  </button>
+                  <span class="row-actions" style="margin-left: 12px">
+                    <button
+                      type="button"
+                      class="text-action text-action--accent"
+                      @click="contactCreator(publicSelected.title)"
+                    >
+                      咨询
+                    </button>
+                  </span>
+                </div>
+              </aside>
+            </template>
+          </div>
+
+          <div v-if="!profile.voices.length" class="empty-state">
+            <LoadingSpinner v-if="loading" inline text="加载创作者主页…" />
+            <p v-else><strong>暂无符合筛选的公开音色</strong></p>
+          </div>
+        </section>
       </RackPanel>
 
-      <PageActionBar v-if="isSelf" label="创作者">
+      <PageActionBar v-if="inWorkbench && isSelf" label="创作者">
         <PageActionLink @click="openEdit">编辑主页</PageActionLink>
         <router-link to="/catalog" class="page-action-link">发布到音色馆</router-link>
       </PageActionBar>
-    </PageSurface>
+    </component>
 
     <AppModal :open="showEdit" label="主页" title="编辑我的主页" @close="showEdit = false">
       <div class="form-stack">
+        <div class="creator-edit-avatar">
+          <CreatorAvatar
+            :display-name="editName || profile?.display_name || '创作者'"
+            :avatar-url="editAvatarUrl"
+            :user-id="profile?.user_id"
+            size="lg"
+          />
+          <div class="creator-edit-avatar__actions">
+            <button
+              type="button"
+              class="btn btn--ghost btn--sm"
+              :disabled="avatarGenerating || saving"
+              @click="onGenerateAvatar"
+            >
+              {{ avatarGenerating ? "AI 生成中…" : "AI 生成头像" }}
+            </button>
+            <p v-if="avatarGenError" class="hint warn">{{ avatarGenError }}</p>
+            <p v-else class="hint">根据昵称与简介调用通义万相生成；生成后点保存生效。</p>
+          </div>
+        </div>
         <label class="field">
           <span>展示昵称</span>
           <input v-model="editName" maxlength="64" />
@@ -518,6 +531,10 @@ watch(
         <label class="field">
           <span>简介</span>
           <textarea v-model="editBio" rows="4" maxlength="500" />
+        </label>
+        <label class="field field--row">
+          <input v-model="editIsPublic" type="checkbox" />
+          <span>公开主页（出现在创作者目录与发现页）</span>
         </label>
       </div>
       <template #footer>
@@ -535,7 +552,26 @@ watch(
   gap: 12px;
 }
 
+.creator-edit-avatar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+
+.creator-edit-avatar__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 .voice-tile__actions {
   margin-top: 10px;
+}
+
+.field--row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 </style>

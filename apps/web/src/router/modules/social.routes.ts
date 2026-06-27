@@ -1,4 +1,5 @@
 import type { RouteRecordRaw } from "vue-router";
+import { getDevUserId } from "@/api/catalog";
 
 export const socialRoutes: RouteRecordRaw[] = [
   {
@@ -15,6 +16,12 @@ export const socialRoutes: RouteRecordRaw[] = [
     path: "/community",
     name: "community",
     component: () => import("@/modules/social/views/CommunityView.vue"),
+    meta: { shell: "workbench", module: "social", requiresAuth: true },
+  },
+  {
+    path: "/me",
+    name: "my-creator",
+    redirect: () => ({ path: `/creator/${getDevUserId()}` }),
     meta: { shell: "workbench", module: "social", requiresAuth: true },
   },
 ];

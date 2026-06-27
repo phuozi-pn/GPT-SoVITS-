@@ -10,11 +10,17 @@ from sqlalchemy.orm import Session
 from domains.compliance.export import apply_compliance_label
 from voice_platform.audio_util import concat_wav, pitch_shift_wav
 from voice_platform.config import get_settings
+from voice_platform.engine.infer_defaults import (
+    DEFAULT_SPEED_FACTOR,
+    DEFAULT_TEMPERATURE,
+    DEFAULT_TEXT_SPLIT_METHOD,
+    DEFAULT_TOP_P,
+)
 from voice_platform.engine.infer_weights import read_v2pro_base_weights, resolve_synthesis_weights
 from voice_platform.engine.ref_audio import resolve_engine_ref_container
 from voice_platform.engine.paths import host_path_to_container
 from voice_platform.job.models import VoiceVersionRow
-from voice_platform.job.repository import JobRepository, VoiceCatalogRepository
+from voice_platform.job.repository import JobRepository, VoiceCatalogRepository, VoiceVersionRepository
 from voice_platform.job.schemas import InferPayload, InferSegment
 from voice_platform.quota.repository import QuotaRepository
 from voice_platform.storage.local import LocalStorage
@@ -49,21 +55,21 @@ class EngineAdapter:
             "prompt_text": ref_text,
             "prompt_lang": meta.get("prompt_lang", "zh"),
             "media_type": ctx.payload.format,
-            "text_split_method": meta.get("text_split_method", "cut5"),
+            "text_split_method": meta.get("text_split_method", DEFAULT_TEXT_SPLIT_METHOD),
             "streaming_mode": False,
             "parallel_infer": False,
             "temperature": (
                 ctx.payload.temperature
                 if ctx.payload.temperature is not None
-                else meta.get("temperature", 1.0)
+                else meta.get("temperature", DEFAULT_TEMPERATURE)
             ),
             "speed_factor": (
                 ctx.payload.speed_factor
                 if ctx.payload.speed_factor is not None
-                else meta.get("speed_factor", 1.0)
+                else meta.get("speed_factor", DEFAULT_SPEED_FACTOR)
             ),
             "top_p": (
-                ctx.payload.top_p if ctx.payload.top_p is not None else meta.get("top_p", 1.0)
+                ctx.payload.top_p if ctx.payload.top_p is not None else meta.get("top_p", DEFAULT_TOP_P)
             ),
         }
         # Pass emotion / emotion_strength if set (engine may use as auxiliary hint)
@@ -296,6 +302,15 @@ class InferWorker(BaseWorker):
             "labeled_at": label_meta.get("labeled_at"),
             "watermark_embedded": bool(label_meta.get("watermark_embedded")),
         }
+
+        if payload.voice_version_id and result.get("audio_url"):
+            snippet = (payload.text or "").strip()
+            if not snippet and payload.segments:
+                snippet = " ".join(s.text.strip() for s in payload.segments if s.text.strip())
+            patch: dict = {"last_synth_audio_url": result["audio_url"]}
+            if snippet:
+                patch["last_synth_text"] = snippet[:200]
+            VoiceVersionRepository(session).merge_metadata(payload.voice_version_id, patch)
 
         if settings.fingerprint_auto_enroll and label_meta.get("export_compliant"):
             try:

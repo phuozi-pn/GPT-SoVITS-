@@ -7,6 +7,7 @@ from domains.licensing.service import (
     catalog_entry_can_use,
     catalog_entry_purchased,
 )
+from voice_platform.auth.identifiers import mask_email
 from voice_platform.auth.repository import UserRepository
 from voice_platform.social.repository import UserProfileRepository
 from voice_platform.social.system import send_system_notice
@@ -23,9 +24,14 @@ from voice_platform.job.repository import (
     VoiceVersionRepository,
 )
 from voice_platform.job.schemas import (
+    CatalogCoverGenerateRequest,
+    CatalogCoverGenerateResponse,
+    CatalogCoverUploadResponse,
     CatalogEntryResponse,
+    CatalogEntryUpdateRequest,
     CatalogPublishRequest,
     CreatorProfileResponse,
+    FeaturedCreatorSummary,
     InferPayload,
     JobStatus,
     VoiceGrantCreateRequest,
@@ -50,8 +56,62 @@ class MarketplaceService:
         self._versions = VoiceVersionRepository(session)
         self._voices = VoiceRepository(session)
 
+    @staticmethod
+    def _resolve_entry_cover(entry) -> str:
+        from domains.marketplace.avatar_defaults import resolve_catalog_cover_url
+
+        return resolve_catalog_cover_url(
+            tags=list(entry.tags_json or []),
+            cover_image_url=entry.cover_image_url,
+        )
+
+    @staticmethod
+    def _normalize_cover_url(url: str | None) -> str | None:
+        if not url:
+            return url
+        text = url.strip()
+        for prefix in (
+            "http://localhost:8001",
+            "http://127.0.0.1:8001",
+            "https://localhost:8001",
+            "https://127.0.0.1:8001",
+        ):
+            if text.startswith(prefix):
+                path = text[len(prefix) :]
+                return path if path.startswith("/") else f"/{path}"
+        return text
+
+    def _resolve_owner_display_name(
+        self, owner_user_id: UUID, cache: dict[UUID, str] | None = None
+    ) -> str:
+        if cache is not None and owner_user_id in cache:
+            return cache[owner_user_id]
+        profile = UserProfileRepository(self._session).get(owner_user_id)
+        if profile and profile.display_name:
+            name = profile.display_name
+        else:
+            user = UserRepository(self._session).get_by_id(owner_user_id)
+            if user:
+                if user.phone:
+                    name = self._mask_phone(user.phone)
+                elif user.email:
+                    name = mask_email(user.email)
+                else:
+                    name = f"创作者 · {str(owner_user_id).split('-')[0]}"
+            else:
+                short = str(owner_user_id).split("-")[0]
+                name = f"创作者 · {short}"
+        if cache is not None:
+            cache[owner_user_id] = name
+        return name
+
     def _entry_response(
-        self, entry, *, viewer_user_id: UUID | None = None, can_use: bool | None = None
+        self,
+        entry,
+        *,
+        viewer_user_id: UUID | None = None,
+        can_use: bool | None = None,
+        owner_names: dict[UUID, str] | None = None,
     ) -> CatalogEntryResponse | None:
         self._sync_demo_from_job(entry)
         ver = self._versions.get(entry.voice_version_id)
@@ -82,7 +142,9 @@ class MarketplaceService:
             demo_text=entry.demo_text or "",
             demo_audio_url=entry.demo_audio_url,
             demo_job_id=entry.demo_job_id,
+            cover_image_url=self._normalize_cover_url(self._resolve_entry_cover(entry)),
             owner_user_id=entry.owner_user_id,
+            owner_display_name=self._resolve_owner_display_name(entry.owner_user_id, owner_names),
             can_use=can_use,
             license_type=entry.license_type or "personal_non_commercial",
             price_cents=entry.price_cents or 0,
@@ -146,12 +208,15 @@ class MarketplaceService:
     ) -> list[CatalogEntryResponse]:
         _ = user_id
         out: list[CatalogEntryResponse] = []
+        owner_names: dict[UUID, str] = {}
         for entry in self._catalog.list_published(
             featured_only=featured_only,
             tags=tags,
             owner_user_id=owner_user_id,
         ):
-            item = self._entry_response(entry, viewer_user_id=user_id)
+            item = self._entry_response(
+                entry, viewer_user_id=user_id, owner_names=owner_names
+            )
             if item:
                 out.append(item)
         return out
@@ -172,7 +237,6 @@ class MarketplaceService:
         tags: list[str] | None = None,
     ) -> CreatorProfileResponse:
         _ = viewer_user_id
-        user = UserRepository(self._session).get_by_id(owner_user_id)
         voices = self.list_catalog(
             user_id=viewer_user_id,
             featured_only=featured_only,
@@ -181,21 +245,61 @@ class MarketplaceService:
         )
         profile = UserProfileRepository(self._session).get(owner_user_id)
         bio = profile.bio if profile else ""
-        if profile and profile.display_name:
-            display_name = profile.display_name
-        elif user:
-            display_name = self._mask_phone(user.phone)
-        else:
-            short = str(owner_user_id).split("-")[0]
-            display_name = f"创作者 · {short}"
+        from domains.marketplace.avatar_defaults import resolve_creator_avatar_url
+
+        avatar_url = resolve_creator_avatar_url(
+            user_id=owner_user_id,
+            avatar_url=profile.avatar_url if profile else None,
+        )
+        display_name = self._resolve_owner_display_name(owner_user_id)
 
         return CreatorProfileResponse(
             user_id=owner_user_id,
             display_name=display_name,
             bio=bio,
+            avatar_url=avatar_url,
             published_count=len(voices),
             voices=voices,
         )
+
+    def list_featured_creators(
+        self,
+        *,
+        viewer_user_id: UUID,
+        limit: int = 12,
+    ) -> list[FeaturedCreatorSummary]:
+        featured_entries = self.list_catalog(
+            user_id=viewer_user_id,
+            featured_only=True,
+        )
+        grouped: dict[UUID, list[CatalogEntryResponse]] = {}
+        for entry in featured_entries:
+            grouped.setdefault(entry.owner_user_id, []).append(entry)
+
+        out: list[FeaturedCreatorSummary] = []
+        for owner_id, voices in grouped.items():
+            profile = self.get_creator_profile(
+                owner_user_id=owner_id,
+                viewer_user_id=viewer_user_id,
+            )
+            spotlight = next((v for v in voices if v.demo_audio_url), voices[0] if voices else None)
+            out.append(
+                FeaturedCreatorSummary(
+                    user_id=owner_id,
+                    display_name=profile.display_name,
+                    bio=profile.bio,
+                    avatar_url=profile.avatar_url,
+                    published_count=profile.published_count,
+                    featured_voice_count=len(voices),
+                    spotlight_voice=spotlight,
+                )
+            )
+
+        out.sort(
+            key=lambda item: (item.featured_voice_count, item.published_count, item.display_name),
+            reverse=True,
+        )
+        return out[: max(1, min(limit, 50))]
 
     def list_catalog_tags(self) -> list[str]:
         return self._catalog.list_distinct_tags()
@@ -236,6 +340,11 @@ class MarketplaceService:
         if not voice:
             raise MarketplaceServiceError("VOICE_NOT_FOUND", "Voice not found", 404)
         demo_text = body.demo_text.strip() or get_settings().catalog_demo_text
+        cover_url = self._normalize_cover_url((body.cover_image_url.strip() or None))
+        if not cover_url:
+            from domains.marketplace.avatar_defaults import default_catalog_cover_url
+
+            cover_url = default_catalog_cover_url(body.tags)
         entry = self._catalog.publish(
             voice_version_id=body.voice_version_id,
             owner_user_id=owner_user_id,
@@ -249,7 +358,11 @@ class MarketplaceService:
             billing_unit=body.billing_unit,
             included_chars=body.included_chars,
             prohibited_domains=body.prohibited_domains,
+            cover_image_url=cover_url,
         )
+        from domains.marketplace.avatar_assign import AvatarAssignService
+
+        AvatarAssignService(self._session).ensure_creator_avatar(owner_user_id)
         if get_settings().catalog_auto_approve:
             approved = self._catalog.approve(entry.id)
             entry = approved or entry
@@ -266,10 +379,146 @@ class MarketplaceService:
             raise MarketplaceServiceError("VOICE_NOT_FOUND", "Voice version not found", 404)
         return item
 
+    def generate_catalog_cover_preview(
+        self, *, owner_user_id: UUID, body: CatalogCoverGenerateRequest
+    ) -> CatalogCoverGenerateResponse:
+        from domains.marketplace.cover_image import CatalogCoverError, generate_and_store_catalog_cover
+
+        try:
+            url, prompt = generate_and_store_catalog_cover(
+                owner_user_id=owner_user_id,
+                title=body.title.strip(),
+                tags=body.tags,
+                prompt=body.prompt,
+            )
+        except CatalogCoverError as exc:
+            raise MarketplaceServiceError(exc.code, exc.message, exc.http_status) from exc
+        return CatalogCoverGenerateResponse(
+            cover_image_url=self._normalize_cover_url(url) or url,
+            prompt=prompt,
+        )
+
+    def generate_catalog_cover_for_entry(
+        self,
+        *,
+        catalog_id: UUID,
+        owner_user_id: UUID,
+        body: CatalogCoverGenerateRequest | None = None,
+    ) -> CatalogEntryResponse:
+        from domains.marketplace.cover_image import CatalogCoverError, generate_and_store_catalog_cover
+
+        entry = self._catalog.get(catalog_id)
+        if not entry:
+            raise MarketplaceServiceError("CATALOG_NOT_FOUND", "Catalog entry not found", 404)
+        if entry.owner_user_id != owner_user_id:
+            raise MarketplaceServiceError("FORBIDDEN", "Only the owner can generate cover", 403)
+        title = body.title.strip() if body and body.title.strip() else entry.title
+        tags = body.tags if body and body.tags else list(entry.tags_json or [])
+        prompt = body.prompt if body else None
+        try:
+            url, _prompt = generate_and_store_catalog_cover(
+                owner_user_id=owner_user_id,
+                title=title,
+                tags=tags,
+                catalog_id=catalog_id,
+                prompt=prompt,
+            )
+        except CatalogCoverError as exc:
+            raise MarketplaceServiceError(exc.code, exc.message, exc.http_status) from exc
+        normalized = self._normalize_cover_url(url) or url
+        updated = self._catalog.set_cover_image_url(catalog_id, cover_image_url=normalized)
+        entry = updated or entry
+        item = self._entry_response(entry, viewer_user_id=owner_user_id)
+        if not item:
+            raise MarketplaceServiceError("VOICE_NOT_FOUND", "Voice version not found", 404)
+        return item
+
+    def upload_catalog_cover_draft(
+        self, *, owner_user_id: UUID, data: bytes, filename: str
+    ) -> CatalogCoverUploadResponse:
+        from domains.marketplace.cover_image import CatalogCoverError, upload_and_store_catalog_cover
+
+        ext = filename.rsplit(".", 1)[-1] if "." in filename else "png"
+        try:
+            url = upload_and_store_catalog_cover(
+                owner_user_id=owner_user_id,
+                data=data,
+                ext=ext,
+            )
+        except CatalogCoverError as exc:
+            raise MarketplaceServiceError(exc.code, exc.message, exc.http_status) from exc
+        return CatalogCoverUploadResponse(cover_image_url=self._normalize_cover_url(url) or url)
+
+    def upload_catalog_cover_for_entry(
+        self, *, catalog_id: UUID, owner_user_id: UUID, data: bytes, filename: str
+    ) -> CatalogEntryResponse:
+        from domains.marketplace.cover_image import CatalogCoverError, upload_and_store_catalog_cover
+
+        entry = self._catalog.get(catalog_id)
+        if not entry:
+            raise MarketplaceServiceError("CATALOG_NOT_FOUND", "Catalog entry not found", 404)
+        if entry.owner_user_id != owner_user_id:
+            raise MarketplaceServiceError("FORBIDDEN", "Only the owner can upload cover", 403)
+        ext = filename.rsplit(".", 1)[-1] if "." in filename else "png"
+        try:
+            url = upload_and_store_catalog_cover(
+                owner_user_id=owner_user_id,
+                data=data,
+                ext=ext,
+                catalog_id=catalog_id,
+            )
+        except CatalogCoverError as exc:
+            raise MarketplaceServiceError(exc.code, exc.message, exc.http_status) from exc
+        normalized = self._normalize_cover_url(url) or url
+        updated = self._catalog.set_cover_image_url(catalog_id, cover_image_url=normalized)
+        entry = updated or entry
+        item = self._entry_response(entry, viewer_user_id=owner_user_id)
+        if not item:
+            raise MarketplaceServiceError("VOICE_NOT_FOUND", "Voice version not found", 404)
+        return item
+
+    def update_catalog_entry(
+        self, *, catalog_id: UUID, owner_user_id: UUID, body: CatalogEntryUpdateRequest
+    ) -> CatalogEntryResponse:
+        entry = self._catalog.get(catalog_id)
+        if not entry:
+            raise MarketplaceServiceError("CATALOG_NOT_FOUND", "Catalog entry not found", 404)
+        if entry.owner_user_id != owner_user_id:
+            raise MarketplaceServiceError("FORBIDDEN", "Only the owner can update entry", 403)
+
+        tags = body.tags
+        if tags is not None and len(tags) > 10:
+            raise MarketplaceServiceError("INVALID_TAGS", "标签不能超过 10 个", 400)
+
+        cover_url = body.cover_image_url
+        if cover_url is not None:
+            cover_url = self._normalize_cover_url(cover_url.strip() or None)
+
+        updated = self._catalog.update_owner_entry(
+            catalog_id,
+            owner_user_id,
+            title=body.title.strip() if body.title else None,
+            description=body.description if body.description is not None else None,
+            tags=tags,
+            cover_image_url=cover_url,
+        )
+        if not updated:
+            raise MarketplaceServiceError("CATALOG_NOT_FOUND", "Catalog entry not found", 404)
+        item = self._entry_response(updated, viewer_user_id=owner_user_id)
+        if not item:
+            raise MarketplaceServiceError("VOICE_NOT_FOUND", "Voice version not found", 404)
+        return item
+
     def approve_catalog_entry(self, *, catalog_id: UUID) -> CatalogEntryResponse:
         entry = self._catalog.approve(catalog_id)
         if not entry:
             raise MarketplaceServiceError("CATALOG_NOT_FOUND", "Pending catalog entry not found", 404)
+        from domains.marketplace.avatar_assign import AvatarAssignService
+
+        assigner = AvatarAssignService(self._session)
+        assigner.ensure_catalog_cover(entry)
+        assigner.ensure_creator_avatar(entry.owner_user_id)
+        entry = self._catalog.get(catalog_id) or entry
         self._enqueue_catalog_demo(entry)
         if entry.status == "published":
             CommunityService(self._session).record_catalog_published(

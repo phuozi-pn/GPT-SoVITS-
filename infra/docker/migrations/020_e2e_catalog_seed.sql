@@ -17,9 +17,9 @@ INSERT INTO voice_catalog_entries (
     '22222222-2222-2222-2222-222222222222',
     '11111111-1111-1111-1111-111111111101',
     '00000000-0000-0000-0000-000000000001',
-    'E2E 演示音色',
-    'Playwright 金路径用公开音色，含 mock 购买流程',
-    '["短剧", "男声", "演示"]'::jsonb,
+    '龙渊 · 沉稳男声',
+    '适合短剧男主、旁白与解说；声线沉稳厚实，长篇叙事耐听。',
+    '["男声", "男主", "旁白", "解说", "沉稳", "磁性", "细腻", "短剧"]'::jsonb,
     TRUE,
     'published',
     'commercial_standard',
@@ -31,4 +31,6 @@ INSERT INTO voice_catalog_entries (
     status = EXCLUDED.status,
     price_cents = EXCLUDED.price_cents,
     title = EXCLUDED.title,
-    featured = EXCLUDED.featured;
+    featured = EXCLUDED.featured,
+    tags = EXCLUDED.tags,
+    description = EXCLUDED.description;

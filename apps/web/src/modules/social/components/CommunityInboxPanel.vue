@@ -81,7 +81,7 @@ const {
         :class="{ 'conv-card--on': peerId === c.peer_user_id }"
         @click="openThread(c.peer_user_id, c.peer_display_name)"
       >
-        <UserAvatar :name="c.peer_display_name" size="sm" />
+        <UserAvatar :name="c.peer_display_name" :user-id="c.peer_user_id" size="sm" />
         <span class="conv-card__body">
           <strong>{{ c.peer_display_name }}</strong>
           <span class="conv-card__preview">{{ c.last_message }}</span>
@@ -104,7 +104,7 @@ const {
       <div class="chat-pane">
         <header class="chat-head">
           <button type="button" class="chat-head__back" @click="openThread('', '')" title="关闭会话">&larr;</button>
-          <UserAvatar :name="peerName" size="sm" />
+          <UserAvatar :name="peerName" :user-id="peerId" size="sm" />
           <div class="chat-head__meta">
             <strong>{{ peerName }}</strong>
           </div>

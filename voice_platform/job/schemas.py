@@ -116,8 +116,12 @@ class VoiceVersionSummary(BaseModel):
     label: str | None = None
     ref_text: str | None = None
     imported: bool = False
+    train_mode: str | None = None
     granted: bool = False
     synth_ready: bool = True
+    preview_audio_url: str | None = None
+    source_audio_url: str | None = None
+    clone_demo_audio_url: str | None = None
     created_at: datetime | None = None
 
 
@@ -144,6 +148,8 @@ class VoiceVersionManageSummary(VoiceVersionSummary):
     catalog_id: UUID | None = None
     catalog_status: str | None = None
     catalog_title: str | None = None
+    catalog_cover_image_url: str | None = None
+    catalog_tags: list[str] = Field(default_factory=list)
     can_unpublish: bool = False
     can_delete: bool = True
     delete_block_reason: str | None = None
@@ -157,6 +163,7 @@ class VoiceAssetManageSummary(BaseModel):
     qc_passed: bool = False
     qc_status: str | None = None
     duration_sec: float | None = None
+    preview_audio_url: str | None = None
     created_at: datetime | None = None
 
 
@@ -198,11 +205,34 @@ class CatalogPublishRequest(BaseModel):
     tags: list[str] = Field(default_factory=list, max_length=10)
     featured: bool = False
     demo_text: str = Field(default="", max_length=500)
+    cover_image_url: str = Field(default="", max_length=2048)
     license_type: str = Field(default="personal_non_commercial")
     price_cents: int = Field(default=0, ge=0, le=10_000_000)
     billing_unit: str = Field(default="per_1k_chars")
     included_chars: int = Field(default=50_000, ge=0, le=50_000_000)
     prohibited_domains: list[str] = Field(default_factory=list, max_length=10)
+
+
+class CatalogCoverGenerateRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=128)
+    tags: list[str] = Field(default_factory=list, max_length=10)
+    prompt: str | None = Field(default=None, max_length=800)
+
+
+class CatalogCoverGenerateResponse(BaseModel):
+    cover_image_url: str
+    prompt: str = ""
+
+
+class CatalogCoverUploadResponse(BaseModel):
+    cover_image_url: str
+
+
+class CatalogEntryUpdateRequest(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=128)
+    description: str | None = Field(default=None, max_length=2000)
+    tags: list[str] | None = Field(default=None, max_length=10)
+    cover_image_url: str | None = Field(default=None, max_length=2048)
 
 
 class CatalogLicensePolicyRequest(BaseModel):
@@ -226,7 +256,9 @@ class CatalogEntryResponse(BaseModel):
     demo_text: str = ""
     demo_audio_url: str | None = None
     demo_job_id: UUID | None = None
+    cover_image_url: str | None = None
     owner_user_id: UUID
+    owner_display_name: str = ""
     can_use: bool = True
     license_type: str = "personal_non_commercial"
     price_cents: int = 0
@@ -243,8 +275,19 @@ class CreatorProfileResponse(BaseModel):
     user_id: UUID
     display_name: str
     bio: str = ""
+    avatar_url: str | None = None
     published_count: int
     voices: list[CatalogEntryResponse] = Field(default_factory=list)
+
+
+class FeaturedCreatorSummary(BaseModel):
+    user_id: UUID
+    display_name: str
+    bio: str = ""
+    avatar_url: str | None = None
+    published_count: int = 0
+    featured_voice_count: int = 0
+    spotlight_voice: CatalogEntryResponse | None = None
 
 
 class VoiceGrantCreateRequest(BaseModel):
@@ -479,6 +522,13 @@ class JobSubmitResponse(BaseModel):
     queue_position: int | None = None
 
 
+class SynthesisHistorySegment(BaseModel):
+    voice_version_id: UUID | None = None
+    voice_name: str | None = None
+    text: str
+    role: str | None = None
+
+
 class JobResponse(BaseModel):
     job_id: UUID
     job_type: JobType
@@ -508,6 +558,32 @@ class JobResponse(BaseModel):
     succeeded_count: int | None = None
     failed_count: int | None = None
     zip_url: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    text_preview: str | None = None
+    full_text: str | None = None
+    voice_name: str | None = None
+    voice_version_label: str | None = None
+    segments: list[SynthesisHistorySegment] | None = None
+
+
+class SynthesisHistoryItem(BaseModel):
+    job_id: UUID
+    status: JobStatus
+    created_at: datetime
+    text_preview: str
+    voice_name: str | None = None
+    voice_version_label: str | None = None
+    audio_url: str | None = None
+    duration_sec: float | None = None
+    chars_billed: int | None = None
+    error_message: str | None = None
+
+
+class SynthesisHistoryDetail(SynthesisHistoryItem):
+    full_text: str
+    segments: list[SynthesisHistorySegment] = []
+    updated_at: datetime | None = None
 
 
 class SynthesisResponse(BaseModel):
@@ -567,6 +643,8 @@ class QcResult(BaseModel):
     ref_text: str | None = None
     ref_text_auto: bool = False
     asr_provider: str | None = None
+    audio_enhanced: bool = False
+    enhance_note: str | None = None
 
 
 class AssetUploadResponse(BaseModel):

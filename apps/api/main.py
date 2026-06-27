@@ -57,18 +57,68 @@ def _run_migrations() -> None:
         except Exception as exc:
             logger.warning("Alembic migration skipped: %s", exc)
 
-    # 2. 回退：直接执行 SQL 文件（兼容旧版）
+    # 2. 回退：按文件名顺序执行 SQL，每条仅运行一次（platform_sql_migrations 记账）
     migrations_dir = repo_root / "infra" / "docker" / "migrations"
     if not migrations_dir.is_dir():
         return
+    import logging
+
     import psycopg
 
+    logger = logging.getLogger(__name__)
     url = get_settings().database_url.replace("postgresql+psycopg://", "postgresql://")
-    for migration in sorted(migrations_dir.glob("*.sql")):
-        sql = migration.read_text(encoding="utf-8")
+    migrations = sorted(migrations_dir.glob("*.sql"))
+
+    def _migration_number(name: str) -> int:
+        try:
+            return int(name.split("_", 1)[0])
+        except ValueError:
+            return 9999
+
+    with psycopg.connect(url) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS platform_sql_migrations (
+                    filename TEXT PRIMARY KEY,
+                    applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            )
+            cur.execute("SELECT COUNT(*) FROM platform_sql_migrations")
+            tracking_empty = (cur.fetchone() or (0,))[0] == 0
+            cur.execute("SELECT to_regclass('public.users')")
+            existing_db = cur.fetchone()[0] is not None
+            if tracking_empty and existing_db:
+                # 已有业务数据的库首次启用记账：视为 034 之前的迁移均已执行过
+                for migration in migrations:
+                    if _migration_number(migration.name) < 34:
+                        cur.execute(
+                            "INSERT INTO platform_sql_migrations (filename) VALUES (%s) ON CONFLICT DO NOTHING",
+                            (migration.name,),
+                        )
+                logger.info(
+                    "Bootstrapped platform_sql_migrations for existing DB (%d files before 034)",
+                    sum(1 for m in migrations if _migration_number(m.name) < 34),
+                )
+        conn.commit()
+
+    for migration in migrations:
         with psycopg.connect(url) as conn:
             with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT 1 FROM platform_sql_migrations WHERE filename = %s",
+                    (migration.name,),
+                )
+                if cur.fetchone():
+                    continue
+                sql = migration.read_text(encoding="utf-8")
                 cur.execute(sql)
+                cur.execute(
+                    "INSERT INTO platform_sql_migrations (filename) VALUES (%s)",
+                    (migration.name,),
+                )
+                logger.info("Applied SQL migration: %s", migration.name)
             conn.commit()
 
 

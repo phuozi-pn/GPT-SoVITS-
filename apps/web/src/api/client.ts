@@ -38,9 +38,11 @@ export class ApiError extends Error {
 
 // ── 内部工具 ─────────────────────────────────────────────
 
+import { _requestEnd, _requestStart } from "@/composables/useRequestLoading";
+
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 
-function authHeaders(): HeadersInit {
+export function buildAuthHeaders(): HeadersInit {
   const token = localStorage.getItem("access_token");
   const headers: Record<string, string> = {};
   let traceId = sessionStorage.getItem("trace_id");
@@ -57,8 +59,6 @@ function authHeaders(): HeadersInit {
   }
   return headers;
 }
-
-import { _requestEnd, _requestStart } from "@/composables/useRequestLoading";
 
 async function parseError(res: Response): Promise<ApiError> {
   let code = "HTTP_ERROR";
@@ -109,11 +109,15 @@ export async function apiJson<T>(
     if (!headers.has("Content-Type") && init.body && !(init.body instanceof FormData)) {
       headers.set("Content-Type", "application/json");
     }
-    for (const [k, v] of Object.entries(authHeaders())) {
+    for (const [k, v] of Object.entries(buildAuthHeaders())) {
       headers.set(k, v);
     }
+    const hadToken = Boolean(localStorage.getItem("access_token"));
     const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
     if (!res.ok) {
+      if (res.status === 401 && hadToken && !path.startsWith("/api/v1/auth/")) {
+        localStorage.removeItem("access_token");
+      }
       throw await parseError(res);
     }
     if (res.status === 204) {
@@ -156,10 +160,24 @@ export async function sendSms(phone: string) {
   });
 }
 
+export async function sendEmailCode(email: string) {
+  return apiJson<{ mock_code?: string | null; message: string }>("/api/v1/auth/email/send", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+}
+
 export async function login(phone: string, code: string) {
   return apiJson<LoginResponse>("/api/v1/auth/login", {
     method: "POST",
     body: JSON.stringify({ phone, code }),
+  });
+}
+
+export async function loginWithEmail(email: string, code: string) {
+  return apiJson<LoginResponse>("/api/v1/auth/email/login", {
+    method: "POST",
+    body: JSON.stringify({ email, code }),
   });
 }
 
@@ -222,6 +240,8 @@ export async function uploadAsset(voiceId: string, file: File, refText?: string)
       ref_text?: string | null;
       ref_text_auto?: boolean;
       asr_provider?: string | null;
+      audio_enhanced?: boolean;
+      enhance_note?: string | null;
       issues?: { code?: string; message: string }[];
     };
   }>("/api/v1/voices/assets", { method: "POST", body: form });

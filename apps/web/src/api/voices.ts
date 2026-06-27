@@ -1,11 +1,14 @@
 import { apiJson } from "./client";
 import type { CatalogEntry } from "./catalog";
 import type { VoiceVersionSummary } from "./library";
+import { versionDefaultDisplayName } from "@/utils/voiceOriginDisplay";
 
 export interface VoiceVersionManageSummary extends VoiceVersionSummary {
   catalog_id?: string | null;
   catalog_status?: string | null;
   catalog_title?: string | null;
+  catalog_cover_image_url?: string | null;
+  catalog_tags?: string[];
   can_unpublish?: boolean;
   can_delete: boolean;
   delete_block_reason?: string | null;
@@ -19,6 +22,7 @@ export interface VoiceAssetManageSummary {
   qc_passed: boolean;
   qc_status?: string | null;
   duration_sec?: number | null;
+  preview_audio_url?: string | null;
   created_at?: string | null;
 }
 
@@ -107,8 +111,5 @@ export function formatDuration(sec?: number | null) {
 }
 
 export function versionDisplayName(v: VoiceVersionManageSummary) {
-  const label = v.label?.trim();
-  if (label) return label;
-  if (v.imported) return `导入 v${v.version}`;
-  return `训练 v${v.version}`;
+  return versionDefaultDisplayName(v);
 }

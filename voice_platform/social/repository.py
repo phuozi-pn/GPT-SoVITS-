@@ -23,6 +23,7 @@ class UserProfileRepository:
         *,
         display_name: str | None = None,
         bio: str | None = None,
+        avatar_url: str | None = None,
         is_public: bool | None = None,
     ) -> UserProfileRow:
         row = self.get(user_id)
@@ -33,6 +34,8 @@ class UserProfileRepository:
             row.display_name = display_name.strip() or None
         if bio is not None:
             row.bio = bio.strip()
+        if avatar_url is not None:
+            row.avatar_url = avatar_url.strip() or None
         if is_public is not None:
             row.is_public = is_public
         self._session.flush()

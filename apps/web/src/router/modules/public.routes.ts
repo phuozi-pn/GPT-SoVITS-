@@ -41,6 +41,12 @@ export const publicRoutes: RouteRecordRaw[] = [
     path: "/creator/:userId",
     name: "creator",
     component: () => import("@/modules/social/views/CreatorView.vue"),
-    meta: { shell: "public", module: "social", public: true },
+    meta: { module: "social", public: true },
+  },
+  {
+    path: "/creators",
+    name: "creators",
+    component: () => import("@/modules/social/views/CreatorsBrowseView.vue"),
+    meta: { module: "social", public: true },
   },
 ];

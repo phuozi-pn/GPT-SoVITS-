@@ -283,12 +283,12 @@ function samplesFor(mode: ProduceWorkMode = "single") {
 
 .tb-mode-badge--single {
   background: rgb(59 130 246 / 0.12);
-  color: #1d4ed8;
+  color: var(--color-indigo-light);
 }
 
 .tb-mode-badge--dialogue {
   background: var(--color-vu-amber-soft);
-  color: #8a5a24;
+  color: var(--theme-warm);
 }
 
 .tb-mode-badge--vocal {
@@ -300,7 +300,7 @@ function samplesFor(mode: ProduceWorkMode = "single") {
 .tb-btn--on {
   border-color: var(--color-vu-amber);
   background: var(--color-vu-amber-soft);
-  color: #8a5a24;
+  color: var(--theme-warm);
   font-weight: 600;
 }
 

@@ -8,6 +8,7 @@ from pathlib import Path
 from uuid import UUID
 
 from domains.licensing.service import catalog_entry_can_use
+from voice_platform.auth.identifiers import mask_email
 from voice_platform.auth.repository import UserRepository
 from voice_platform.job.repository import VoiceCatalogRepository
 from voice_platform.social.repository import (
@@ -16,6 +17,7 @@ from voice_platform.social.repository import (
     VoiceDownloadEventRepository,
 )
 from voice_platform.social.schemas import (
+    AvatarGenerateResponse,
     ConversationPreviewResponse,
     MessageCreateRequest,
     MessageResponse,
@@ -56,11 +58,20 @@ class SocialService:
             return profile.display_name
         user = self._users.get_by_id(user_id)
         if user:
-            return self._mask_phone(user.phone)
+            if user.phone:
+                return self._mask_phone(user.phone)
+            if user.email:
+                return mask_email(user.email)
         return f"用户 · {str(user_id).split('-')[0]}"
 
     def _published_count(self, user_id: UUID) -> int:
         return len(self._catalog.list_published(owner_user_id=user_id))
+
+    @staticmethod
+    def _resolved_avatar(user_id: UUID, avatar_url: str | None) -> str:
+        from domains.marketplace.avatar_defaults import resolve_creator_avatar_url
+
+        return resolve_creator_avatar_url(user_id=user_id, avatar_url=avatar_url)
 
     def _profile_response(self, user_id: UUID, *, viewer_user_id: UUID) -> UserPublicProfileResponse:
         profile = self._profiles.get(user_id)
@@ -70,10 +81,17 @@ class SocialService:
         if not user and viewer_user_id != user_id:
             raise SocialServiceError("USER_NOT_FOUND", "用户不存在", 404)
         bio = profile.bio if profile else ""
+        from domains.marketplace.avatar_defaults import resolve_creator_avatar_url
+
+        avatar_url = resolve_creator_avatar_url(
+            user_id=user_id,
+            avatar_url=profile.avatar_url if profile else None,
+        )
         return UserPublicProfileResponse(
             user_id=user_id,
             display_name=self._display_name(user_id),
             bio=bio,
+            avatar_url=avatar_url,
             published_voice_count=self._published_count(user_id),
             is_self=viewer_user_id == user_id,
         )
@@ -83,10 +101,29 @@ class SocialService:
             user_id,
             display_name=body.display_name,
             bio=body.bio,
+            avatar_url=body.avatar_url,
             is_public=body.is_public,
         )
         self._session.commit()
         return self._profile_response(user_id, viewer_user_id=user_id)
+
+    def generate_my_avatar(self, *, user_id: UUID) -> AvatarGenerateResponse:
+        from domains.marketplace.cover_image import CatalogCoverError, generate_and_store_creator_avatar
+
+        profile = self._profiles.get(user_id)
+        display_name = self._display_name(user_id)
+        bio = profile.bio if profile else ""
+        try:
+            url, prompt = generate_and_store_creator_avatar(
+                user_id=user_id,
+                display_name=display_name,
+                bio=bio,
+            )
+        except CatalogCoverError as exc:
+            raise SocialServiceError(exc.code, exc.message, exc.http_status) from exc
+        self._profiles.upsert(user_id, avatar_url=url)
+        self._session.commit()
+        return AvatarGenerateResponse(avatar_url=url, prompt=prompt)
 
     def get_profile(self, *, user_id: UUID, viewer_user_id: UUID) -> UserPublicProfileResponse:
         return self._profile_response(user_id, viewer_user_id=viewer_user_id)
@@ -107,6 +144,7 @@ class SocialService:
                     user_id=profile.user_id,
                     display_name=self._display_name(profile.user_id),
                     bio=profile.bio,
+                    avatar_url=self._resolved_avatar(profile.user_id, profile.avatar_url),
                     published_voice_count=count,
                 )
             )
@@ -122,6 +160,10 @@ class SocialService:
                     user_id=entry.owner_user_id,
                     display_name=self._display_name(entry.owner_user_id),
                     bio=profile.bio if profile else "",
+                    avatar_url=self._resolved_avatar(
+                        entry.owner_user_id,
+                        profile.avatar_url if profile else None,
+                    ),
                     published_voice_count=self._published_count(entry.owner_user_id),
                 )
             )

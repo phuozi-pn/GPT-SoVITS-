@@ -10,6 +10,7 @@ from domains.quota.service import QuotaService, QuotaServiceError
 from domains.training.service import TrainingService
 from domains.training.validate import TrainingServiceError, validate_train_backend
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from domains.voices.service import VoiceService, VoiceServiceError
 from domains.voices.import_service import EngineWeightsImportService, ImportServiceError
@@ -105,16 +106,37 @@ def list_voice_versions(
     return VoiceService(session).list_versions(user_id)
 
 
+@router.get("/voice-versions/{voice_version_id}/preview-audio")
+def stream_voice_version_preview(
+    voice_version_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    session: Session = Depends(get_session),
+):
+    service = VoiceService(session)
+    try:
+        path = service.preview_audio_path(voice_version_id=voice_version_id, user_id=user_id)
+    except VoiceServiceError as exc:
+        raise_domain_http(exc)
+    return FileResponse(path, media_type="audio/wav", filename=f"voice-{voice_version_id}.wav")
+
+
 @router.post("/voices/import-weights", response_model=VoiceVersionSummary, status_code=201)
 def import_engine_weights(
     body: ImportEngineWeightsRequest,
     user_id: UUID = Depends(get_current_user_id),
     session: Session = Depends(get_session),
 ) -> VoiceVersionSummary:
+    quota = QuotaService(session)
     try:
-        return EngineWeightsImportService(session).import_weights(owner_user_id=user_id, body=body)
+        quota.ensure_training_available(user_id)
+    except QuotaServiceError as exc:
+        raise_domain_http(exc)
+    try:
+        result = EngineWeightsImportService(session).import_weights(owner_user_id=user_id, body=body)
     except ImportServiceError as exc:
         raise_domain_http(exc)
+    quota.record_training(user_id=user_id, job_id=result.voice_version_id)
+    return result
 
 
 @router.post("/voices/import-weights/upload", response_model=VoiceVersionSummary, status_code=201)
@@ -131,8 +153,13 @@ async def import_engine_weights_upload(
     user_id: UUID = Depends(get_current_user_id),
     session: Session = Depends(get_session),
 ) -> VoiceVersionSummary:
+    quota = QuotaService(session)
     try:
-        return EngineWeightsImportService(session).import_uploaded_files(
+        quota.ensure_training_available(user_id)
+    except QuotaServiceError as exc:
+        raise_domain_http(exc)
+    try:
+        result = EngineWeightsImportService(session).import_uploaded_files(
             owner_user_id=user_id,
             voice_name=voice_name,
             ref_text=ref_text,
@@ -146,6 +173,8 @@ async def import_engine_weights_upload(
         )
     except ImportServiceError as exc:
         raise_domain_http(exc)
+    quota.record_training(user_id=user_id, job_id=result.voice_version_id)
+    return result
 
 
 @router.post("/voices", response_model=VoiceCreateResponse, status_code=201)

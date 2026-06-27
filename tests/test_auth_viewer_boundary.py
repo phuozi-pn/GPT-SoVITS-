@@ -41,6 +41,22 @@ def test_viewer_cannot_send_message(strict_client):
     assert r.status_code == 401
 
 
+def test_viewer_invalid_bearer_can_read_public_catalog(strict_client, monkeypatch):
+    from domains import marketplace as marketplace_mod
+
+    monkeypatch.setattr(
+        marketplace_mod.service.MarketplaceService,
+        "list_catalog",
+        lambda self, **kwargs: [],
+    )
+
+    r = strict_client.get(
+        "/api/v1/public/catalog",
+        headers={"Authorization": "Bearer invalid-token"},
+    )
+    assert r.status_code == 200
+
+
 def test_viewer_can_read_public_feed(strict_client, monkeypatch):
     from domains import community as community_mod
     from voice_platform.community.schemas import FeedResponse

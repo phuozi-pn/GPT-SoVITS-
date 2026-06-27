@@ -34,6 +34,37 @@ export async function fetchPlatformStats() {
   return apiJson<PlatformStatsResponse>("/api/v1/admin/stats");
 }
 
+export interface UserUsageReportRow {
+  user_id: string;
+  phone: string;
+  chars_used: number;
+  trainings_used: number;
+  monthly_char_limit: number;
+  monthly_train_limit: number;
+  chars_remaining: number;
+  trainings_remaining: number;
+}
+
+export interface UserUsageReportResponse {
+  billing_month: string;
+  items: UserUsageReportRow[];
+  total: number;
+}
+
+export async function fetchAdminUsageReport(limit = 100) {
+  return apiJson<UserUsageReportResponse>(`/api/v1/admin/usage-report?limit=${limit}`);
+}
+
+export async function updateAdminUserQuota(
+  userId: string,
+  body: { monthly_char_limit?: number; monthly_train_limit?: number },
+) {
+  return apiJson<import("./client").QuotaSummary>(`/api/v1/admin/users/${userId}/quota`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+}
+
 export async function fetchAdminComplaints() {
   return apiJson<AdminComplaint[]>("/api/v1/admin/complaints");
 }

@@ -2,8 +2,17 @@ from __future__ import annotations
 
 from uuid import UUID
 
+from pathlib import Path
+
 from domains.voices.access import list_accessible_version_ids
-from voice_platform.engine.ref_audio import voice_synth_ready
+from domains.voices.origin import resolve_voice_train_mode
+from domains.voices.preview import (
+    resolve_asset_preview_audio_url,
+    resolve_version_clone_demo_audio_url,
+    resolve_version_preview_audio_url,
+    resolve_version_source_audio_url,
+)
+from voice_platform.engine.ref_audio import ensure_host_ref_for_engine, voice_ref_host_path, voice_synth_ready
 from voice_platform.job.repository import (
     ProjectRepository,
     VoiceCatalogRepository,
@@ -32,6 +41,22 @@ _BLOCKED_CATALOG_STATUSES = frozenset({"pending", "published"})
 _UNPUBLISH_CATALOG_STATUSES = frozenset({"pending", "published"})
 
 
+def _normalize_cover_url(url: str | None) -> str | None:
+    if not url:
+        return url
+    text = url.strip()
+    for prefix in (
+        "http://localhost:8001",
+        "http://127.0.0.1:8001",
+        "https://localhost:8001",
+        "https://127.0.0.1:8001",
+    ):
+        if text.startswith(prefix):
+            path = text[len(prefix) :]
+            return path if path.startswith("/") else f"/{path}"
+    return text
+
+
 class VoiceService:
     def __init__(self, session) -> None:
         self._session = session
@@ -53,6 +78,12 @@ class VoiceService:
         manage: bool = False,
     ) -> VoiceVersionSummary | VoiceVersionManageSummary:
         meta = row.metadata_json or {}
+        train_mode = resolve_voice_train_mode(
+            metadata=meta,
+            imported=bool(meta.get("imported")),
+            checkpoint_uri=row.checkpoint_uri,
+        )
+        imported = bool(meta.get("imported")) and train_mode.startswith("import")
         base = VoiceVersionSummary(
             voice_version_id=row.id,
             voice_id=row.voice_id,
@@ -61,22 +92,44 @@ class VoiceService:
             model_tag=row.model_tag,
             label=meta.get("label"),
             ref_text=row.ref_text,
-            imported=bool(meta.get("imported")),
+            imported=imported,
+            train_mode=resolve_voice_train_mode(
+                metadata=meta,
+                imported=imported,
+                checkpoint_uri=row.checkpoint_uri,
+            ),
             granted=granted,
             synth_ready=voice_synth_ready(row),
+            preview_audio_url=resolve_version_preview_audio_url(self._session, row),
+            source_audio_url=resolve_version_source_audio_url(self._session, row),
+            clone_demo_audio_url=resolve_version_clone_demo_audio_url(self._session, row),
             created_at=row.created_at,
         )
         if not manage:
             return base
 
-        catalog = self._catalog.find_by_version(row.id)
+        catalog = self._catalog.find_active_by_version(row.id)
         can_delete, block_reason = self._delete_constraints(row.id, catalog)
         can_unpublish = bool(catalog and catalog.status in _UNPUBLISH_CATALOG_STATUSES)
+        cover_url: str | None = None
+        catalog_tags: list[str] = []
+        if catalog:
+            from domains.marketplace.avatar_defaults import resolve_catalog_cover_url
+
+            catalog_tags = list(catalog.tags_json or [])
+            cover_url = _normalize_cover_url(
+                resolve_catalog_cover_url(
+                    tags=catalog_tags,
+                    cover_image_url=catalog.cover_image_url,
+                )
+            )
         return VoiceVersionManageSummary(
             **base.model_dump(),
             catalog_id=catalog.id if catalog else None,
             catalog_status=catalog.status if catalog else None,
             catalog_title=catalog.title if catalog else None,
+            catalog_cover_image_url=cover_url,
+            catalog_tags=catalog_tags,
             can_unpublish=can_unpublish,
             can_delete=can_delete,
             delete_block_reason=block_reason,
@@ -92,6 +145,7 @@ class VoiceService:
             qc_passed=bool(row.qc_passed),
             qc_status=qc.get("status"),
             duration_sec=qc.get("duration_sec"),
+            preview_audio_url=resolve_asset_preview_audio_url(row.storage_uri),
             created_at=row.created_at,
         )
 
@@ -240,3 +294,22 @@ class VoiceService:
                     409,
                 )
         self._voices.delete_voice_tree(voice_id)
+
+    def _can_access_version(self, *, voice_version_id: UUID, user_id: UUID) -> bool:
+        row = self._versions.get(voice_version_id)
+        if not row:
+            return False
+        if row.owner_user_id == user_id:
+            return True
+        return voice_version_id in list_accessible_version_ids(self._session, user_id)
+
+    def preview_audio_path(self, *, voice_version_id: UUID, user_id: UUID) -> Path:
+        if not self._can_access_version(voice_version_id=voice_version_id, user_id=user_id):
+            raise VoiceServiceError("VERSION_NOT_FOUND", "音色版本不存在或无权试听", 404)
+        row = self._versions.get(voice_version_id)
+        if not row:
+            raise VoiceServiceError("VERSION_NOT_FOUND", "音色版本不存在或无权试听", 404)
+        host = voice_ref_host_path(row)
+        if host is None or not host.is_file():
+            raise VoiceServiceError("PREVIEW_NOT_AVAILABLE", "该版本暂无可播放的参考音频", 404)
+        return ensure_host_ref_for_engine(host)

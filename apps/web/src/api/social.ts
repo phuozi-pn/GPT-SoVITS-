@@ -4,6 +4,7 @@ export type UserDirectoryEntry = {
   user_id: string;
   display_name: string;
   bio: string;
+  avatar_url?: string | null;
   published_voice_count: number;
 };
 
@@ -11,6 +12,7 @@ export type UserPublicProfile = {
   user_id: string;
   display_name: string;
   bio: string;
+  avatar_url?: string | null;
   published_voice_count: number;
   is_self: boolean;
 };
@@ -47,12 +49,24 @@ export function fetchUserProfile(userId: string) {
 export function updateMyProfile(body: {
   display_name?: string;
   bio?: string;
+  avatar_url?: string | null;
   is_public?: boolean;
 }) {
   return apiJson<UserPublicProfile>("/api/v1/users/me/profile", {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+  });
+}
+
+export interface AvatarGenerateResult {
+  avatar_url: string;
+  prompt?: string;
+}
+
+export function generateCreatorAvatar() {
+  return apiJson<AvatarGenerateResult>("/api/v1/users/me/profile/generate-avatar", {
+    method: "POST",
   });
 }
 

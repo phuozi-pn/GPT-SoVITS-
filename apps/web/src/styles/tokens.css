@@ -14,11 +14,11 @@
   --bg-surface-glass: rgb(30 34 41 / 0.92);
   --bg-surface-muted: rgb(24 28 34 / 0.78);
 
-  /* ── 文字 · 由亮至暗 ────────────────────────────── */
-  --color-ink: #EDEBE7;          /* 主文本 — 暖白 */
-  --color-ink-muted: #9B9792;    /* 次要文本 — 暖灰 */
-  --color-ink-faint: #6B6762;    /* 辅助文本 — 暗灰 */
-  --color-pine-ink: rgb(237 235 231 / 0.82);
+  /* ── 文字 · 由亮至暗（深色底 WCAG AA 4.5:1+）──────── */
+  --color-ink: #F2F0EC;          /* 主文本 — 暖白 */
+  --color-ink-muted: #C4C0BA;    /* 次要文本 — 说明、副标题 */
+  --color-ink-faint: #9E9993;    /* 辅助文本 — 标签、占位符 */
+  --color-pine-ink: rgb(242 240 236 / 0.9);
 
   /* ── 主题暖色 · 琥珀金 ──────────────────────────── */
   --theme-warm: #E5A93C;         /* 琥珀金 — 温润、治愈、深夜电台 */
@@ -54,7 +54,7 @@
 
   /* ── 旧铜 · 金属质感 ────────────────────────────── */
   --color-brushed: #2D323A;
-  --color-brushed-dark: #7D7974;
+  --color-brushed-dark: #B0ACA6; /* 元信息/侧栏标签（深色底可读） */
   --color-cold-gold: rgb(229 169 60 / 0.15);
 
   /* ── 纸基兼容 (深色降级用) ──────────────────────── */
@@ -130,7 +130,7 @@
   --brand-phonia-glow: rgb(229 169 60 / 0.5);
   --brand-phonia-dim: rgb(229 169 60 / 0.2);
   --brand-phonia-seal: #C85A4A;
-  --brand-phonia-text: #E4E2DF;
+  --brand-phonia-text: #F0EEEB;
   --brand-font-display: "Playfair Display", "Noto Serif SC", Georgia, serif;
   --brand-font-latin: "Playfair Display", "Cormorant Garamond", Georgia, serif;
 
@@ -140,7 +140,7 @@
   --splash-gold: #E5A93C;
   --splash-gold-glow: rgb(229 169 60 / 0.5);
   --splash-gold-dim: rgb(229 169 60 / 0.25);
-  --splash-text: #E4E2DF;
+  --splash-text: #F0EEEB;
   --splash-seal: #C85A4A;
   --splash-duration-brand: 1.2s;
   --splash-duration-total: 3.5s;

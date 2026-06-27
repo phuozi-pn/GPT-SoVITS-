@@ -8,6 +8,7 @@ from uuid import UUID
 
 from voice_platform.audio_util import pitch_shift_wav
 from voice_platform.config import get_settings
+from domains.voices.preview import resolve_version_source_audio_url
 from voice_platform.job.repository import AbVoteRepository, QualityReportRepository, VoiceVersionRepository
 from voice_platform.job.schemas import (
     AbTrialResponse,
@@ -38,15 +39,20 @@ class QualityService:
         seed = int(voice_version_id.hex[:8], 16)
         return round(0.88 + (seed % 12) / 100.0, 4)
 
-    def _mock_synth_url(self, *, owner_user_id: UUID, voice_version_id: UUID, ref_uri: str | None) -> str | None:
-        if not ref_uri or not ref_uri.startswith("local://"):
+    def _mock_synth_url(
+        self,
+        *,
+        owner_user_id: UUID,
+        voice_version_id: UUID,
+        ver,
+    ) -> str | None:
+        from voice_platform.quality.engine_synth import load_ref_wav_bytes_for_voice
+
+        ref_bytes = load_ref_wav_bytes_for_voice(ver)
+        if not ref_bytes:
             return None
-        rel = ref_uri.removeprefix("local://")
+        shifted = pitch_shift_wav(ref_bytes, 1.08)
         storage = LocalStorage()
-        abs_path = storage.absolute_path(rel)
-        if not Path(abs_path).is_file():
-            return None
-        shifted = pitch_shift_wav(Path(abs_path).read_bytes(), 1.08)
         out_rel = storage.save_bytes(
             user_id=owner_user_id,
             job_id=voice_version_id,
@@ -69,10 +75,13 @@ class QualityService:
         ver,
         voice_version_id: UUID,
     ) -> tuple[float, str | None, str]:
-        from voice_platform.quality.engine_synth import load_ref_wav_bytes, synthesize_eval_wav
+        from voice_platform.quality.engine_synth import (
+            load_ref_wav_bytes_for_voice,
+            synthesize_eval_wav,
+        )
         from voice_platform.quality.speaker_embedding import cosine_similarity
 
-        ref_bytes = load_ref_wav_bytes(ver.ref_audio_uri)
+        ref_bytes = load_ref_wav_bytes_for_voice(ver)
         if not ref_bytes:
             raise QualityServiceError(
                 "REF_AUDIO_MISSING",
@@ -117,14 +126,14 @@ class QualityService:
 
         settings = get_settings()
         threshold = settings.quality_similarity_threshold
-        ref_url = resolve_public_url(ver.ref_audio_uri)
+        ref_url = resolve_version_source_audio_url(self._session, ver)
         if settings.quality_mock:
             method = "mock_embedding"
             score = self._mock_score(voice_version_id)
             synth_url = self._mock_synth_url(
                 owner_user_id=ver.owner_user_id,
                 voice_version_id=voice_version_id,
-                ref_uri=ver.ref_audio_uri,
+                ver=ver,
             )
             eval_sentence = settings.quality_eval_sentence
         else:
@@ -224,7 +233,20 @@ class QualityService:
         )
 
     def evaluate_after_train(self, voice_version_id: UUID) -> None:
+        import logging
+
+        logger = logging.getLogger(__name__)
         try:
             self.evaluate(voice_version_id=voice_version_id)
-        except QualityServiceError:
-            return
+        except QualityServiceError as exc:
+            logger.warning(
+                "auto quality eval skipped voice_version=%s code=%s msg=%s",
+                voice_version_id,
+                exc.code,
+                exc.message,
+            )
+        except Exception:
+            logger.exception(
+                "auto quality eval failed voice_version=%s (train job not affected)",
+                voice_version_id,
+            )

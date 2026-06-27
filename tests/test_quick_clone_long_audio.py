@@ -28,12 +28,13 @@ def _wav_bytes(duration_sec: float = 20.0, rate: int = 32000) -> bytes:
     return buf.getvalue()
 
 
+@patch("workers.train.quick_clone_adapter.align_ref_text_to_engine_ref")
 @patch("workers.train.quick_clone_adapter.VoiceVersionRepository")
 @patch("workers.train.quick_clone_adapter.get_db_session")
 @patch("voice_platform.storage.resolve.get_settings")
 @patch("workers.train.quick_clone_adapter.get_settings")
 def test_long_audio_uses_head_clip_not_random_slice(
-    mock_gs, mock_resolve_gs, mock_session, mock_repo_cls, tmp_path
+    mock_gs, mock_resolve_gs, mock_session, mock_repo_cls, mock_align, tmp_path
 ):
     storage_root = tmp_path / "storage"
     storage_root.mkdir()
@@ -56,6 +57,7 @@ def test_long_audio_uses_head_clip_not_random_slice(
     )()
 
     ref_text = "好好爱自己，就有人会爱你。"
+    mock_align.return_value = (ref_text, True)
     for gs in (mock_gs, mock_resolve_gs):
         gs.return_value.storage_root = str(storage_root)
         gs.return_value.engine_train_sample_text = ref_text

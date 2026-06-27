@@ -53,7 +53,7 @@ test.describe("金路径 · API 联调", () => {
 
   test("公开馆展示 E2E 种子音色", async ({ page }) => {
     await page.goto(`/browse?pick=${E2E_CATALOG_ID}`);
-    await expect(page.getByRole("heading", { name: "E2E 演示音色" })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole("heading", { name: "龙渊 · 沉稳男声" })).toBeVisible({ timeout: 15_000 });
   });
 
   test("购买 mock 弹出成功并进入合成", async ({ page }) => {

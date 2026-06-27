@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { onMounted } from "vue";
 import { formatPriceCents, getDevUserId } from "@/api/catalog";
+import CatalogCoverEditor from "@/modules/voice/components/CatalogCoverEditor.vue";
 import CatalogModals from "@/modules/voice/components/CatalogModals.vue";
 import CatalogVoiceGrid from "@/modules/voice/components/CatalogVoiceGrid.vue";
 import MakeWorkspace from "@/modules/produce/components/MakeWorkspace.vue";
 import DetailStrip from "@/components/DetailStrip.vue";
 import DetailStripItem from "@/components/DetailStripItem.vue";
+import VoiceCatalogMeta from "@/components/VoiceCatalogMeta.vue";
 import PageActionBar from "@/components/PageActionBar.vue";
 import PageActionLink from "@/components/PageActionLink.vue";
 import PageHero from "@/components/PageHero.vue";
@@ -15,7 +17,7 @@ import { useCatalogBrowse, useCatalogVoicesForEntry } from "@/modules/voice/comp
 import { useCatalogManage } from "@/modules/voice/composables/useCatalogManage";
 import { useCatalogSynth } from "@/modules/voice/composables/useCatalogSynth";
 import { isLabsEnabled } from "@/config/features";
-import { catalogAccessPillClass, catalogAccessStatus, licenseLabel } from "@/utils/catalogDisplay";
+import { catalogAccessPillClass, catalogAccessStatus, catalogOwnerLabel, licenseLabel } from "@/utils/catalogDisplay";
 
 const browse = useCatalogBrowse();
 const manage = useCatalogManage(browse);
@@ -66,6 +68,7 @@ const {
   publishTitle,
   publishDescription,
   publishTags,
+  publishCoverUrl,
   publishDemoText,
   publishLicenseType,
   publishPriceYuan,
@@ -98,6 +101,14 @@ const {
   onApprove,
   onReject,
   onRegenerateDemo,
+  openEditEntry,
+  openEditEntryById,
+  onSaveEditEntry,
+  onEntryCoverUpdated,
+  editingEntry,
+  editTitle,
+  editTags,
+  editCoverUrl,
   onRedeemInvite,
   onJoinWaitlist,
   dismissCheckout,
@@ -181,12 +192,38 @@ const {
               @select-voice="selectVoice"
               @load-catalog="loadCatalog"
               @contact-creator="contactCreator"
+              @edit-entry="openEditEntryById"
             />
           </div>
 
           <div class="catalog-layout__aside">
+            <section
+              v-if="selectedEntry && selectedEntry.owner_user_id === getDevUserId()"
+              class="catalog-aside-publish"
+            >
+              <div class="catalog-aside-publish__head">
+                <h3 class="catalog-aside-publish__title">我的发布设置</h3>
+                <button type="button" class="text-action" @click="openEditEntry(selectedEntry)">
+                  编辑标签
+                </button>
+              </div>
+              <CatalogCoverEditor
+                :title="selectedEntry.title"
+                :tags="selectedEntry.tags"
+                :catalog-id="selectedEntry.catalog_id"
+                :disabled="loading"
+                :cover-url="selectedEntry.cover_image_url ?? ''"
+                @entry-updated="onEntryCoverUpdated"
+              />
+            </section>
+
             <DetailStrip v-if="selectedEntry" class="catalog-aside-strip">
               <DetailStripItem label="展示名">{{ selectedEntry.title }}</DetailStripItem>
+              <DetailStripItem label="创作者">
+                <router-link class="text-action" :to="`/creator/${selectedEntry.owner_user_id}`">
+                  {{ catalogOwnerLabel(selectedEntry) }}
+                </router-link>
+              </DetailStripItem>
               <DetailStripItem label="引擎音色">{{ selectedEntry.voice_name }}</DetailStripItem>
               <DetailStripItem label="授权">{{ licenseLabel(selectedEntry.license_type) }}</DetailStripItem>
               <DetailStripItem label="价格">{{ formatPriceCents(selectedEntry.price_cents) }}</DetailStripItem>
@@ -201,6 +238,10 @@ const {
                 </span>
               </DetailStripItem>
             </DetailStrip>
+
+            <div v-if="selectedEntry?.tags.length" class="catalog-aside-tags">
+              <VoiceCatalogMeta :entry="selectedEntry" :show-author="false" prominent :tag-limit="10" />
+            </div>
 
             <MakeWorkspace
               v-if="selectedEntry"
@@ -328,6 +369,7 @@ const {
       :publish-title="publishTitle"
       :publish-description="publishDescription"
       :publish-tags="publishTags"
+      :publish-cover-url="publishCoverUrl"
       :publish-demo-text="publishDemoText"
       :publish-license-type="publishLicenseType"
       :publish-price-yuan="publishPriceYuan"
@@ -342,6 +384,10 @@ const {
       :invite-code="inviteCode"
       :waitlist-contact="waitlistContact"
       :waitlist-note="waitlistNote"
+      :editing-entry="editingEntry"
+      :edit-title="editTitle"
+      :edit-tags="editTags"
+      :edit-cover-url="editCoverUrl"
       :version-option-label="versionOptionLabel"
       :dev-user-presets="DEV_USER_PRESETS"
       :prohibited-domain-options="PROHIBITED_DOMAIN_OPTIONS"
@@ -353,6 +399,9 @@ const {
       @revoke-grant="onRevokeGrant"
       @approve="onApprove"
       @reject="onReject"
+      @edit-entry="openEditEntry"
+      @save-edit-entry="onSaveEditEntry"
+      @entry-cover-updated="onEntryCoverUpdated"
       @redeem-invite="onRedeemInvite"
       @join-waitlist="onJoinWaitlist"
       @export-certificate="onExportCertificate"
@@ -364,6 +413,7 @@ const {
       @update:publish-title="publishTitle = $event"
       @update:publish-description="publishDescription = $event"
       @update:publish-tags="publishTags = $event"
+      @update:publish-cover-url="publishCoverUrl = $event"
       @update:publish-demo-text="publishDemoText = $event"
       @update:publish-license-type="publishLicenseType = $event"
       @update:publish-price-yuan="publishPriceYuan = $event"
@@ -375,6 +425,9 @@ const {
       @update:invite-code="inviteCode = $event"
       @update:waitlist-contact="waitlistContact = $event"
       @update:waitlist-note="waitlistNote = $event"
+      @update:edit-title="editTitle = $event"
+      @update:edit-tags="editTags = $event"
+      @update:edit-cover-url="editCoverUrl = $event"
     />
   </div>
 </template>
@@ -424,8 +477,32 @@ const {
   overflow-y: auto;
 }
 
+.catalog-aside-publish {
+  margin-bottom: 18px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--color-line);
+}
+
+.catalog-aside-publish__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.catalog-aside-publish__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
 .catalog-aside-strip {
   margin-bottom: 18px;
+}
+
+.catalog-aside-tags {
+  margin-bottom: 14px;
 }
 
 .catalog-make {

@@ -16,6 +16,8 @@ export const API_CLIENT_MODULES: Record<string, WorkbenchModuleId | "platform"> 
   client: "platform",
   library: "produce",
   script: "produce",
+  history: "produce",
+  wallet: "platform",
   voices: "voice",
   catalog: "voice",
   kyc: "voice",
@@ -38,6 +40,7 @@ export const MODULE_COMPOSABLES: Record<WorkbenchModuleId, readonly string[]> = 
 export const OPENAPI_TAG_MODULES: Record<string, WorkbenchModuleId | "platform"> = {
   auth: "platform",
   usage: "platform",
+  wallet: "platform",
   jobs: "platform",
   exports: "platform",
   synthesis: "produce",
@@ -61,9 +64,9 @@ export const OPENAPI_TAG_MODULES: Record<string, WorkbenchModuleId | "platform">
 
 /** 侧栏展示的路由 name（顺序固定）；未列入者为二级/外链页 */
 export const SIDEBAR_ROUTE_NAMES: Record<WorkbenchModuleId, readonly string[]> = {
-  produce: ["library", "projects"],
+  produce: ["library", "projects", "account", "history"],
   voice: ["studio", "voices", "catalog"],
-  social: ["discover-feed", "community"],
+  social: ["discover-feed", "community", "my-creator"],
   ops: ["admin"],
 };
 
@@ -72,6 +75,7 @@ export const SIDEBAR_NAV_OVERRIDES: Partial<
   Record<string, { name?: string; label?: string; hint?: string }>
 > = {
   "discover-feed": { name: "discover", label: "发现", hint: "动态·精选·指南" },
+  "my-creator": { name: "my-creator", label: "我的主页", hint: "展示资料与作品" },
 };
 
 export function moduleForApiClient(filename: string): WorkbenchModuleId | "platform" | undefined {

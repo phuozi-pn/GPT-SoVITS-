@@ -92,6 +92,18 @@ class ProjectService:
             voice_version_id=row.voice_version_id,
         )
 
+    def unbind_role(
+        self,
+        *,
+        project_id: UUID,
+        role_id: UUID,
+        owner_user_id: UUID,
+    ) -> None:
+        if not self._projects.user_owns(project_id, owner_user_id):
+            raise ProjectServiceError("PROJECT_NOT_FOUND", "Project not found", 404)
+        if not self._projects.delete_role(project_id=project_id, role_id=role_id):
+            raise ProjectServiceError("ROLE_NOT_FOUND", "Role binding not found", 404)
+
     def submit_csv_batch(
         self,
         *,

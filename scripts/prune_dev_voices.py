@@ -17,8 +17,29 @@ KEEP_VOICE_IDS = frozenset(
         "2eed92a9-a9ea-4d6b-9e6c-04bf7d6eb9b5",  # cloud import 蛊真人-004
     }
 )
-DELETE_NAME_PREFIXES = ("smoke-",)
+DELETE_NAME_PREFIXES = ("smoke-", "懒")
 DELETE_EXACT_NAMES = frozenset({"my-voice", "我的音色", "蛊真人朗读"})
+
+# ref_text 与音频严重不对齐时视为污染（常见于带 BGM 素材 + ASR 误识别）
+_POLLUTED_REF_MARKERS = ("别爸爸", "受伤的心里", "你以为你")
+_GOOD_REF_MARKERS = ("好好爱自己", "臭榴莲", "大家好，我是测试")
+
+
+def _ref_text_polluted(v: dict) -> bool:
+    for ver in v.get("versions") or []:
+        if ver.get("train_mode") != "quick_clone":
+            continue
+        rt = (ver.get("ref_text") or "").strip()
+        if not rt:
+            return True
+        if any(m in rt for m in _GOOD_REF_MARKERS):
+            continue
+        if any(m in rt for m in _POLLUTED_REF_MARKERS):
+            return True
+        # 长句无任何标点，多为 ASR 乱码
+        if len(rt) >= 18 and not any(p in rt for p in "，。！？、；："):
+            return True
+    return False
 
 
 def _asset_duration(v: dict) -> float | None:
@@ -63,8 +84,11 @@ def should_delete(v: dict, *, keep_my_voice_id: str | None) -> tuple[bool, str]:
         return True, f"dev upload ({name})"
 
     for prefix in DELETE_NAME_PREFIXES:
-        if name.lower().startswith(prefix):
-            return True, f"smoke test ({name})"
+        if name.lower().startswith(prefix) or name.startswith(prefix):
+            return True, f"dev test voice ({name})"
+
+    if _ref_text_polluted(v):
+        return True, "polluted quick_clone ref_text"
 
     # 林俊杰 / 关键词: only pinned 9s; drop full-song (~3min) attempts
     if name in {"林俊杰", "关键词", "唱腔", "关键词-纯人声", "关键词-干声9秒"}:

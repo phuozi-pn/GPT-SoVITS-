@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onActivated, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import AppModal from "@/components/AppModal.vue";
 import ConfirmModal from "@/components/ConfirmModal.vue";
@@ -8,6 +8,9 @@ import ErrorBanner from "@/components/ErrorBanner.vue";
 import LoadingSpinner from "@/components/LoadingSpinner.vue";
 import PageHero from "@/components/PageHero.vue";
 import PageSurface from "@/components/PageSurface.vue";
+import VoiceCloneCompare from "@/components/VoiceCloneCompare.vue";
+import VoiceCoverPlay from "@/components/VoiceCoverPlay.vue";
+import VoicePreviewButton from "@/components/VoicePreviewButton.vue";
 import RackPanel from "@/modules/voice/components/studio/RackPanel.vue";
 import {
   catalogStatusLabel,
@@ -24,6 +27,7 @@ import {
   type VoiceManageSummary,
   type VoiceVersionManageSummary,
 } from "@/api/voices";
+import { fetchMyCatalogSubmissions, type CatalogEntry } from "@/api/catalog";
 import { useToast } from "@/composables/useToast";
 import { formatApiError } from "@/utils/apiErrors";
 
@@ -32,6 +36,9 @@ const { toastOk, toastError } = useToast();
 const loading = ref(false);
 const error = ref("");
 const voices = ref<VoiceManageSummary[]>([]);
+const catalogEntries = ref<CatalogEntry[]>([]);
+
+const catalogById = computed(() => new Map(catalogEntries.value.map((e) => [e.catalog_id, e])));
 
 const totalVersions = computed(() =>
   voices.value.reduce((n, v) => n + (v.versions?.length ?? v.version_count), 0),
@@ -71,7 +78,12 @@ async function reload() {
   loading.value = true;
   error.value = "";
   try {
-    voices.value = await fetchMyVoicesDetail();
+    const [voiceList, submissions] = await Promise.all([
+      fetchMyVoicesDetail(),
+      fetchMyCatalogSubmissions().catch(() => [] as CatalogEntry[]),
+    ]);
+    voices.value = voiceList;
+    catalogEntries.value = submissions;
   } catch (e) {
     error.value = formatApiError(e);
   } finally {
@@ -221,7 +233,51 @@ function formatDate(iso?: string | null) {
   });
 }
 
+function latestCloneDemoUrl(voice: VoiceManageSummary) {
+  const ver = voice.versions?.[0];
+  return ver?.clone_demo_audio_url ?? ver?.preview_audio_url ?? null;
+}
+
+function versionCatalogEntry(ver: VoiceVersionManageSummary, fallbackTitle: string) {
+  const catalog = ver.catalog_id ? catalogById.value.get(ver.catalog_id) : undefined;
+  const base = catalog
+    ? {
+        catalog_id: catalog.catalog_id,
+        title: catalog.title,
+        cover_image_url: catalog.cover_image_url,
+        tags: catalog.tags ?? [],
+      }
+    : {
+        catalog_id: ver.catalog_id ?? ver.voice_version_id,
+        title: ver.catalog_title ?? fallbackTitle,
+        cover_image_url: ver.catalog_cover_image_url ?? null,
+        tags: ver.catalog_tags ?? [],
+      };
+  return base;
+}
+
+function voiceCatalogEntry(voice: VoiceManageSummary) {
+  const ver = voice.versions?.find((v) => v.catalog_id) ?? voice.versions?.[0];
+  if (!ver) {
+    return {
+      catalog_id: voice.voice_id,
+      title: voice.name,
+      cover_image_url: null as string | null,
+      tags: [] as string[],
+    };
+  }
+  return versionCatalogEntry(ver, voice.name);
+}
+
+function goEditCatalog(catalogId: string) {
+  void router.push({ path: "/catalog", query: { pick: catalogId } });
+}
+
 onMounted(() => {
+  void reload();
+});
+
+onActivated(() => {
   void reload();
 });
 </script>
@@ -241,7 +297,7 @@ onMounted(() => {
       <PageHero
         compact
         flow
-        hint="管理自有音色与版本。已上架须先下架再删；点音色名下方可展开训练素材与授权记录。"
+        hint="每个版本可并排试听：训练前原声与克隆合成样例。"
       >
         <template #stats>
           <p class="page-metrics">
@@ -273,6 +329,11 @@ onMounted(() => {
         <div v-else class="voices-list">
           <section v-for="voice in voices" :key="voice.voice_id" class="voice-group">
             <header class="voice-group__head">
+              <VoiceCoverPlay
+                :entry="voiceCatalogEntry(voice)"
+                :src="latestCloneDemoUrl(voice)"
+                size="lg"
+              />
               <div class="voice-group__lead">
                 <h3 class="voice-group__title">{{ voice.name }}</h3>
                 <p class="hint voice-group__meta">{{ voice.version_count }} 个版本 · {{ formatDate(voice.versions?.[0]?.created_at) }}</p>
@@ -297,28 +358,45 @@ onMounted(() => {
 
             <ul v-if="voice.versions?.length" class="version-rows">
               <li v-for="ver in voice.versions" :key="ver.voice_version_id" class="version-row">
-                <div class="version-row__main">
-                  <div class="version-row__title-line">
+                <header class="version-row__header">
+                  <div class="version-row__heading">
                     <strong class="version-row__name">{{ versionDisplayName(ver) }}</strong>
-                    <button type="button" class="text-action text-action--accent" @click="goSynth(ver.voice_version_id)">
-                      去合成 →
-                    </button>
+                    <div class="version-row__tags">
+                      <span class="pill pill--muted">{{ ver.model_tag }}</span>
+                      <span v-if="ver.catalog_status" class="pill pill--warn">
+                        {{ catalogStatusLabel(ver.catalog_status) }}
+                        <template v-if="ver.catalog_title"> · {{ ver.catalog_title }}</template>
+                      </span>
+                    </div>
                   </div>
-                  <div class="version-row__tags">
-                    <span v-if="ver.imported" class="pill">导入</span>
-                    <span v-else class="pill">训练</span>
-                    <span class="pill pill--muted">{{ ver.model_tag }}</span>
-                    <span v-if="ver.catalog_status" class="pill pill--warn">
-                      {{ catalogStatusLabel(ver.catalog_status) }}
-                      <template v-if="ver.catalog_title"> · {{ ver.catalog_title }}</template>
-                    </span>
-                  </div>
-                  <p v-if="ver.ref_text" class="hint version-row__ref">{{ ver.ref_text }}</p>
-                  <p v-if="!ver.can_delete && ver.delete_block_reason" class="hint warn version-row__block">
+                  <button type="button" class="btn btn--ghost btn--sm version-row__synth-btn" @click="goSynth(ver.voice_version_id)">
+                    去合成
+                  </button>
+                </header>
+
+                <VoiceCloneCompare
+                  class="version-row__compare"
+                  :source-audio-url="ver.source_audio_url"
+                  :clone-demo-audio-url="ver.clone_demo_audio_url"
+                  :show-heading="false"
+                />
+
+                <div class="version-row__footer">
+                  <p v-if="!ver.clone_demo_audio_url" class="version-row__note version-row__note--info">
+                    尚无合成样例：在工作台步骤 ④ 试听，或点击「质量测评」自动生成。
+                  </p>
+                  <p v-if="ver.ref_text" class="version-row__note version-row__note--quote">{{ ver.ref_text }}</p>
+                  <p v-if="!ver.can_delete && ver.delete_block_reason" class="version-row__note version-row__note--warn">
                     {{ ver.delete_block_reason }}
                   </p>
-                  <div class="row-actions version-row__more">
+                  <div class="row-actions version-row__actions">
                     <button type="button" class="text-action" @click="openEditVersion(ver)">编辑资料</button>
+                    <template v-if="ver.catalog_id">
+                      <span class="row-actions__sep" aria-hidden="true">·</span>
+                      <button type="button" class="text-action text-action--accent" @click="goEditCatalog(ver.catalog_id!)">
+                        编辑封面与标签
+                      </button>
+                    </template>
                     <template v-if="!ver.imported">
                       <span class="row-actions__sep" aria-hidden="true">·</span>
                       <button type="button" class="text-action" @click="goQuality(ver.voice_version_id)">质量测评</button>
@@ -341,16 +419,21 @@ onMounted(() => {
               <section class="voice-detail__section">
                 <h4 class="voice-detail__title">训练素材</h4>
                 <ul v-if="voice.assets?.length" class="detail-list">
-                  <li v-for="asset in voice.assets" :key="asset.asset_id" class="detail-list__row">
-                    <span class="detail-list__label">素材</span>
-                    <span class="mono detail-list__value">{{ asset.asset_id.slice(0, 8) }}…</span>
-                    <span class="detail-list__label">质检</span>
-                    <span>{{ qcStatusLabel(asset.qc_status, asset.qc_passed) }}</span>
-                    <span class="detail-list__label">时长</span>
-                    <span>{{ formatDuration(asset.duration_sec) }}</span>
-                    <span class="detail-list__label">状态</span>
-                    <span>{{ asset.locked ? "已锁定" : "未锁定" }}</span>
-                    <span class="hint detail-list__meta">{{ formatDate(asset.created_at) }}</span>
+                  <li v-for="asset in voice.assets" :key="asset.asset_id" class="detail-list__row detail-list__row--asset">
+                    <VoicePreviewButton :src="asset.preview_audio_url" size="md" disabled-hint="不可播" />
+                    <div class="detail-list__asset-meta">
+                      <span class="detail-list__label">素材</span>
+                      <span class="mono detail-list__value">{{ asset.asset_id.slice(0, 8) }}…</span>
+                      <span class="detail-list__label">质检</span>
+                      <span>{{ qcStatusLabel(asset.qc_status, asset.qc_passed) }}</span>
+                      <span class="detail-list__label">时长</span>
+                      <span>{{ formatDuration(asset.duration_sec) }}</span>
+                      <span class="detail-list__label">状态</span>
+                      <span>{{ asset.locked ? "已锁定" : "未锁定" }}</span>
+                      <span class="hint detail-list__meta">
+                        {{ formatDate(asset.created_at) }}
+                      </span>
+                    </div>
                   </li>
                 </ul>
                 <p v-else class="hint">还没有上传训练素材</p>
@@ -465,8 +548,26 @@ onMounted(() => {
   flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px 24px;
+  gap: 12px 16px;
   margin-bottom: 16px;
+}
+
+.voice-group__head > .voice-cover-play {
+  margin-top: 2px;
+}
+
+.detail-list__row--asset {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.detail-list__asset-meta {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 10px;
 }
 
 .voice-group__lead {
@@ -538,18 +639,21 @@ onMounted(() => {
 /* ── 版本行列表 ───────────────────────────── */
 .version-rows {
   list-style: none;
-  margin: 0;
+  margin: 4px 0 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
 }
 
 .version-row {
-  padding: 16px 20px;
+  display: grid;
+  gap: 0;
+  overflow: hidden;
   border: 1px solid var(--border-glow);
-  border-radius: var(--radius-ui);
+  border-radius: calc(var(--radius-ui) + 4px);
   background: var(--bg-surface-glass);
+  box-shadow: var(--shadow-soft);
   transition:
     border-color var(--duration-fast),
     box-shadow var(--duration-fast);
@@ -557,37 +661,94 @@ onMounted(() => {
 
 .version-row:hover {
   border-color: rgb(255 255 255 / 0.14);
-  box-shadow: 0 2px 12px rgb(0 0 0 / 0.12);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.14);
 }
 
-.version-row__title-line {
+.version-row__header {
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 8px 16px;
+  gap: 12px 16px;
+  padding: 16px 18px 14px;
+  border-bottom: 1px solid rgb(255 255 255 / 0.06);
+}
+
+.version-row__heading {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
 }
 
 .version-row__name {
-  font-size: 15px;
+  font-family: var(--font-display);
+  font-size: 16px;
   font-weight: 600;
+  line-height: 1.3;
 }
 
 .version-row__tags {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 8px;
 }
 
-.version-row__ref,
-.version-row__block {
-  margin: 8px 0 0;
+.version-row__synth-btn {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.version-row__compare {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  border-bottom: 1px solid rgb(255 255 255 / 0.06);
+  background: transparent;
+  box-shadow: none;
+}
+
+.version-row__footer {
+  display: grid;
+  gap: 10px;
+  padding: 14px 18px 16px;
+}
+
+.version-row__note {
+  margin: 0;
   font-size: 13px;
+  line-height: 1.5;
 }
 
-.version-row__more {
-  margin-top: 12px;
+.version-row__note--info {
+  padding: 10px 12px;
+  border-radius: var(--radius-ui);
+  border: 1px dashed rgb(255 255 255 / 0.1);
+  background: var(--bg-surface-muted);
+  color: var(--color-ink-muted);
+}
+
+.version-row__note--quote {
+  padding-left: 12px;
+  border-left: 2px solid var(--border-glow);
+  color: var(--color-ink-muted);
+}
+
+.version-row__note--warn {
+  color: var(--color-danger, #c45c4a);
+}
+
+.version-row__actions {
+  margin-top: 2px;
+}
+
+@media (max-width: 720px) {
+  .version-row__header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .version-row__synth-btn {
+    align-self: flex-start;
+  }
 }
 
 .pill--muted {

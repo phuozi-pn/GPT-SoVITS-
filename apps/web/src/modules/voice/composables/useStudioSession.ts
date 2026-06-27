@@ -24,6 +24,7 @@ export interface StudioWorkspaceSnapshot {
   logLines: string[];
   audioUrl: string;
   lastSynthJobId: string;
+  segmentText?: string;
 }
 
 export interface StudioActiveJobMeta {
@@ -80,6 +81,12 @@ export function clearStudioActiveJob() {
   pollOnTick = null;
   lastNotifiedStatus = "";
   isPolling.value = false;
+}
+
+/** 清空 Studio 工作区与后台任务（加载摸底样本或重新开始时使用）。 */
+export function clearStudioWorkspace() {
+  sessionStorage.removeItem(WORKSPACE_KEY);
+  clearStudioActiveJob();
 }
 
 function notifyTicks(job: JobResponse) {

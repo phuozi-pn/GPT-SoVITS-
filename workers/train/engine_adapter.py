@@ -152,6 +152,7 @@ class EngineTrainAdapter:
                 ref_audio_uri=wav_for_train,
                 ref_text=ref_text_for_infer,
                 metadata={
+                    "train_mode": "engine",
                     "train_job_id": str(job_id),
                     "mock": False,
                     "engine_gpt_weights": gpt_rel,

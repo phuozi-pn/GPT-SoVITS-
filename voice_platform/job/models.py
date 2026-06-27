@@ -107,6 +107,7 @@ class VoiceCatalogEntryRow(Base):
     )
     policy_version: Mapped[int] = mapped_column(nullable=False, default=1)
     reject_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cover_image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

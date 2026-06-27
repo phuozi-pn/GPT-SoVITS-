@@ -29,7 +29,7 @@ const {
     <ul class="creator-suggest-list" style="margin-top: 12px">
       <li v-for="u in filteredPickUsers" :key="u.user_id">
         <button type="button" class="creator-suggest" @click="openThread(u.user_id, u.display_name)">
-          <UserAvatar :name="u.display_name" size="md" />
+          <UserAvatar :name="u.display_name" :avatar-url="u.avatar_url" :user-id="u.user_id" size="md" />
           <span class="creator-suggest__meta">
             <strong>{{ u.display_name }}</strong>
             <span class="hint">{{ u.published_voice_count }} 个公开音色 · {{ u.bio || "暂无简介" }}</span>

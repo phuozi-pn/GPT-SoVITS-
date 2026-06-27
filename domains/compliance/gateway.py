@@ -131,6 +131,45 @@ class ComplianceGateway:
         """Basic + sensitive check for a single CSV line (batch worker)."""
         return self._validate_text(text)
 
+    def precheck_texts(
+        self,
+        texts: list[str],
+        *,
+        segmented: bool = False,
+    ) -> list[dict[str, str | int | None]]:
+        """Non-blocking compliance scan for UI hints before synthesis."""
+        max_len = 2000 if segmented else 5000
+        issues: list[dict[str, str | int | None]] = []
+        for index, raw in enumerate(texts):
+            text = (raw or "").strip()
+            if not text or _PUNCT_ONLY.match(text):
+                issues.append(
+                    {
+                        "code": "INVALID_TEXT",
+                        "message": "台词为空或只有标点",
+                        "segment_index": index,
+                    }
+                )
+                continue
+            if len(text) > max_len:
+                issues.append(
+                    {
+                        "code": "TEXT_TOO_LONG",
+                        "message": f"超过 {max_len} 字（当前 {len(text)} 字）",
+                        "segment_index": index,
+                    }
+                )
+            hit = find_sensitive_word(text, path=self._wordlist_path)
+            if hit:
+                issues.append(
+                    {
+                        "code": "SENSITIVE_WORD",
+                        "message": f"含敏感词「{hit}」",
+                        "segment_index": index,
+                    }
+                )
+        return issues
+
     def _validate_text(self, text: str, *, max_len: int = 5000) -> str:
         cleaned = text.strip()
         if not cleaned or _PUNCT_ONLY.match(cleaned):

@@ -48,14 +48,14 @@ const emit = defineEmits<{ apply: [] }>();
   margin: 0;
   font-size: 13px;
   font-weight: 500;
-  color: #8a5a24;
+  color: var(--theme-warm);
 }
 
 .partial-bar__hint {
   margin: 0;
   font-size: 11px;
   line-height: 1.45;
-  color: rgb(138 90 36 / 0.85);
+  color: var(--color-ink-muted);
 }
 
 .partial-bar__controls {

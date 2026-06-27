@@ -36,6 +36,7 @@ export type AppModule = {
 export const PUBLIC_NAV = [
   { path: "/", label: "首页", name: "home" },
   { path: "/browse", label: "音色馆", name: "browse" },
+  { path: "/creators", label: "创作者", name: "creators" },
   { path: "/updates", label: "社区", name: "public-feed" },
 ] as const;
 
@@ -57,6 +58,20 @@ export const APP_MODULES: AppModule[] = [
         path: "/projects",
         label: "短剧批量配音",
         hint: "CSV 多角色出片",
+        requiresAuth: true,
+      },
+      {
+        name: "account",
+        path: "/account",
+        label: "账户与 Token",
+        hint: "余额 · 购买 · 流水",
+        requiresAuth: true,
+      },
+      {
+        name: "history",
+        path: "/history",
+        label: "合成历史",
+        hint: "台本与音频回放",
         requiresAuth: true,
       },
     ],
@@ -89,7 +104,9 @@ export const APP_MODULES: AppModule[] = [
       { name: "discover-feed", path: "/discover/feed", label: "动态", hint: "时间线", requiresAuth: true },
       { name: "public-feed", path: "/updates", label: "公开动态", appPath: "/discover/feed" },
       { name: "community", path: "/community", label: "消息", hint: "私信收件箱", requiresAuth: true },
+      { name: "my-creator", path: "/me", label: "我的主页", hint: "展示与编辑", requiresAuth: true },
       { name: "creator", path: "/creator/:userId", label: "创作者主页" },
+      { name: "creators", path: "/creators", label: "创作者", appPath: "/discover/feed" },
     ],
   },
   {

@@ -13,6 +13,7 @@ import PageHero from "@/components/PageHero.vue";
 import PageSurface from "@/components/PageSurface.vue";
 import RackPanel from "@/modules/voice/components/studio/RackPanel.vue";
 import TapePlayer from "@/modules/voice/components/studio/TapePlayer.vue";
+import VoiceCloneCompare from "@/components/VoiceCloneCompare.vue";
 import { formatApiError } from "@/utils/apiErrors";
 
 const route = useRoute();
@@ -119,6 +120,12 @@ watch(voiceVersionId, loadReport);
       <RackPanel label="质量" title="相似度报告">
       <p v-if="loading && !report" class="hint">加载中…</p>
       <template v-else-if="report">
+        <VoiceCloneCompare
+          v-if="report.ref_audio_url || report.synth_audio_url"
+          class="quality-compare"
+          :source-audio-url="report.ref_audio_url"
+          :clone-demo-audio-url="report.synth_audio_url"
+        />
         <div class="quality-hero">
           <p class="page-metrics">
             Score
@@ -165,5 +172,9 @@ watch(voiceVersionId, loadReport);
 <style scoped>
 .quality-page {
   gap: 12px;
+}
+
+.quality-compare {
+  margin-bottom: 16px;
 }
 </style>

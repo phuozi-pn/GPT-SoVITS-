@@ -40,9 +40,11 @@ API_MODULES: tuple[tuple[ApiModuleId, str, tuple[ApiRouteSpec, ...]], ...] = (
         (
             ApiRouteSpec("platform", "auth", "auth", ("auth",), "登录与会话"),
             ApiRouteSpec("platform", "usage", "usage", ("quota",), "配额与用量"),
+            ApiRouteSpec("platform", "wallet", "wallet", ("wallet",), "用户 Token 钱包"),
             ApiRouteSpec("platform", "platform", "platform", (), "平台能力与配置"),
             ApiRouteSpec("platform", "jobs", "jobs", ("jobs",), "Job 状态查询"),
             ApiRouteSpec("platform", "exports", "exports", ("jobs", "compliance"), "合规导出下载"),
+            ApiRouteSpec("platform", "compliance", "compliance", ("compliance",), "合成前文本合规预检"),
             ApiRouteSpec("platform", "watermark", "watermark", ("watermark",), "数字水印检测"),
             ApiRouteSpec("platform", "fingerprint", "fingerprint", ("fingerprint",), "音频指纹登记与检索"),
         ),

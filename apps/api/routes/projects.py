@@ -67,6 +67,23 @@ def bind_project_role(
         raise_domain_http(exc)
 
 
+@router.delete("/projects/{project_id}/roles/{role_id}", status_code=204)
+def unbind_project_role(
+    project_id: UUID,
+    role_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    session: Session = Depends(get_session),
+) -> None:
+    try:
+        ProjectService(session).unbind_role(
+            project_id=project_id,
+            role_id=role_id,
+            owner_user_id=user_id,
+        )
+    except ProjectServiceError as exc:
+        raise_domain_http(exc)
+
+
 @router.post("/projects/{project_id}/batch", status_code=202)
 def submit_batch_csv(
     project_id: UUID,

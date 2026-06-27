@@ -6,6 +6,7 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 from domains.assets.convert import ensure_wav
+from domains.voices.origin import resolve_voice_train_mode
 from domains.voices.weight_registration import EngineWeightsRegistration, register_engine_weights_version
 from voice_platform.config import get_settings
 from voice_platform.job.repository import VoiceRepository, VoiceVersionRepository
@@ -72,6 +73,7 @@ class EngineWeightsImportService:
                 speed_factor=body.speed_factor,
                 top_p=body.top_p,
                 extra_metadata=self._import_metadata(body),
+                imported=True,
             ),
         )
         return _version_summary(row, voice.name)
@@ -132,6 +134,7 @@ class EngineWeightsImportService:
                     **({"consent_id": str(consent_id)} if consent_id else {}),
                     **({"voice_asset_id": str(voice_asset_id)} if voice_asset_id else {}),
                 },
+                imported=True,
             ),
         )
         return _version_summary(row, voice.name)
@@ -184,6 +187,7 @@ class EngineWeightsImportService:
                     "cloud_exp_name": result.get("exp_name"),
                     "cloud_elapsed_sec": result.get("elapsed_sec"),
                 },
+                imported=True,
             ),
         )
         return _version_summary(row, voice.name)
@@ -238,6 +242,7 @@ class EngineWeightsImportService:
 
 def _version_summary(row, voice_name: str) -> VoiceVersionSummary:
     meta = row.metadata_json or {}
+    imported = bool(meta.get("imported"))
     return VoiceVersionSummary(
         voice_version_id=row.id,
         voice_id=row.voice_id,
@@ -246,6 +251,11 @@ def _version_summary(row, voice_name: str) -> VoiceVersionSummary:
         model_tag=row.model_tag,
         label=meta.get("label"),
         ref_text=row.ref_text,
-        imported=bool(meta.get("imported")),
+        imported=imported,
+        train_mode=resolve_voice_train_mode(
+            metadata=meta,
+            imported=imported,
+            checkpoint_uri=getattr(row, "checkpoint_uri", None),
+        ),
         created_at=row.created_at,
     )

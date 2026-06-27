@@ -10,14 +10,17 @@ export interface QuotaSummary {
   chars_used: number;
   chars_remaining: number;
   monthly_char_limit: number;
+  wallet_token_balance?: number;
+  total_tokens_remaining?: number;
   trainings_used: number;
   trainings_remaining: number;
   monthly_train_limit: number;
+  reset_at?: string;
 }
 
 export interface LoginResponse {
   access_token: string;
-  user: { user_id: string; phone: string };
+  user: { user_id: string; phone?: string | null; email?: string | null };
   quota: QuotaSummary | null;
 }
 
@@ -44,6 +47,14 @@ export interface JobResponse {
   train_remote_dataset_path?: string | null;
   train_progress_phase?: string | null;
   train_progress_message?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  text_preview?: string | null;
+  full_text?: string | null;
+  voice_name?: string | null;
+  voice_version_label?: string | null;
+  duration_sec?: number | null;
+  chars_billed?: number | null;
 }
 
 // ── 合成 ──────────────────────────────────────────────────

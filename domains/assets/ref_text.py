@@ -61,3 +61,33 @@ def resolve_upload_ref_text(
         raise AssetQcError("TEXT_TOO_LONG", "ASR transcript exceeds 4000 characters", 400)
 
     return text, True, result.provider, []
+
+
+def align_ref_text_to_engine_ref(
+    wav_path: Path,
+    *,
+    fallback: str,
+    settings: Settings | None = None,
+) -> tuple[str, bool]:
+    """ASR on the exact ref wav used by api_v2; fall back to fallback when ASR unavailable."""
+    settings = settings or get_settings()
+    fb = (fallback or "").strip()
+    if not fb and not settings.asset_asr_enabled:
+        return fb, False
+
+    if not settings.asset_asr_enabled:
+        return fb, False
+
+    service = AssetAsrService(settings)
+    if not service.is_available():
+        return fb, False
+
+    try:
+        result = service.transcribe_segment(wav_path)
+        text = result.text.strip()
+        if text:
+            return text, True
+    except Exception:
+        logger.exception("align ref_text asr failed for %s", wav_path)
+
+    return fb, False

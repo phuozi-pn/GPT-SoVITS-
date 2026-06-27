@@ -9,8 +9,12 @@ export interface VoiceVersionSummary {
   label?: string | null;
   ref_text?: string | null;
   imported?: boolean;
+  train_mode?: string | null;
   granted?: boolean;
   synth_ready?: boolean;
+  preview_audio_url?: string | null;
+  source_audio_url?: string | null;
+  clone_demo_audio_url?: string | null;
   created_at?: string | null;
 }
 
@@ -73,6 +77,12 @@ export async function bindProjectRole(projectId: string, roleName: string, voice
   return apiJson<ProjectRole>(`/api/v1/projects/${projectId}/roles`, {
     method: "POST",
     body: JSON.stringify({ role_name: roleName, voice_version_id: voiceVersionId }),
+  });
+}
+
+export async function unbindProjectRole(projectId: string, roleId: string) {
+  return apiJson<void>(`/api/v1/projects/${projectId}/roles/${roleId}`, {
+    method: "DELETE",
   });
 }
 

@@ -1,12 +1,19 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { RouterLink, useRoute } from "vue-router";
+import { RouterLink, useRoute, useRouter } from "vue-router";
+import ThemeSwitcher from "@/components/ThemeSwitcher.vue";
 import { PUBLIC_NAV } from "@/architecture/modules";
 import { DEFAULT_WORKBENCH_ROUTE } from "@/architecture/modules";
-import { hasAppSession } from "@/utils/session";
+import { clearAppSession, hasAppSession } from "@/utils/session";
 
 const route = useRoute();
+const router = useRouter();
 const loggedIn = computed(() => hasAppSession());
+
+function onLogout() {
+  clearAppSession();
+  void router.push("/login");
+}
 </script>
 
 <template>
@@ -38,9 +45,17 @@ const loggedIn = computed(() => hasAppSession());
         <RouterLink v-if="loggedIn" :to="DEFAULT_WORKBENCH_ROUTE" class="public-shell__cta">
           工作台
         </RouterLink>
+        <button
+          v-if="loggedIn"
+          type="button"
+          class="public-shell__link public-shell__link--action"
+          @click="onLogout"
+        >
+          退出登录
+        </button>
         <template v-else>
-          <RouterLink to="/login" class="public-shell__link">登录</RouterLink>
-          <RouterLink to="/login" class="public-shell__cta">开始使用</RouterLink>
+          <RouterLink to="/browse" class="public-shell__link">试听音色</RouterLink>
+          <RouterLink to="/login" class="public-shell__cta">登录购买</RouterLink>
         </template>
       </div>
     </header>
@@ -62,7 +77,10 @@ const loggedIn = computed(() => hasAppSession());
             {{ loggedIn ? "工作台" : "登录" }}
           </RouterLink>
         </nav>
-        <p class="public-shell__note">请仅使用已授权声纹 · 合成内容须标注 AI 生成</p>
+        <div class="public-shell__footer-bottom">
+          <p class="public-shell__note">请仅使用已授权声纹 · 合成内容须标注 AI 生成</p>
+          <ThemeSwitcher compact />
+        </div>
       </div>
     </footer>
   </div>
@@ -151,6 +169,13 @@ const loggedIn = computed(() => hasAppSession());
 .public-shell__link--on {
   color: var(--color-ink);
   background: var(--color-vu-amber-soft);
+}
+
+.public-shell__link--action {
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  background: transparent;
 }
 
 .public-shell__actions {
@@ -250,6 +275,14 @@ const loggedIn = computed(() => hasAppSession());
 
 .public-shell__footer-nav a:hover {
   color: var(--color-ink);
+}
+
+.public-shell__footer-bottom {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  margin-top: 4px;
 }
 
 .public-shell__note {

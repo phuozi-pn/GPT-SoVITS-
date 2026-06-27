@@ -49,3 +49,12 @@ def load_ref_wav_bytes(ref_uri: str | None) -> bytes | None:
         if Path(path).is_file():
             return Path(path).read_bytes()
     return None
+
+
+def load_ref_wav_bytes_for_voice(voice: VoiceVersionRow) -> bytes | None:
+    from voice_platform.engine.ref_audio import voice_ref_host_path
+
+    host = voice_ref_host_path(voice)
+    if host is not None and host.is_file():
+        return host.read_bytes()
+    return load_ref_wav_bytes(voice.ref_audio_uri)

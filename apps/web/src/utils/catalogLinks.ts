@@ -17,3 +17,13 @@ export function catalogAppPath(catalogId?: string, intent?: string) {
 export function catalogPurchasePath(catalogId: string) {
   return catalogAppPath(catalogId, "purchase");
 }
+
+/** 创作者公开主页（可分享） */
+export function creatorPublicPath(userId: string) {
+  return `/creator/${userId}`;
+}
+
+/** 工作台内「我的主页」 */
+export function myCreatorPath() {
+  return "/me";
+}

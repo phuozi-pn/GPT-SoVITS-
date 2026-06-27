@@ -51,10 +51,11 @@ def test_build_train_adapter_quick(tmp_path):
     assert isinstance(adapter, QuickCloneTrainAdapter)
 
 
+@patch("workers.train.quick_clone_adapter.align_ref_text_to_engine_ref")
 @patch("voice_platform.storage.resolve.get_settings")
 @patch("workers.train.quick_clone_adapter.VoiceVersionRepository")
 @patch("workers.train.quick_clone_adapter.get_db_session")
-def test_quick_clone_creates_version(mock_session, mock_repo_cls, mock_resolve_settings, tmp_path):
+def test_quick_clone_creates_version(mock_session, mock_repo_cls, mock_resolve_settings, mock_align, tmp_path):
     wav_path = tmp_path / "asset.wav"
     wav_path.write_bytes(_wav_bytes(6.0))
     storage_root = tmp_path / "storage"
@@ -67,6 +68,7 @@ def test_quick_clone_creates_version(mock_session, mock_repo_cls, mock_resolve_s
     row = type("Row", (), {"id": uuid4(), "checkpoint_uri": "x", "model_tag": MODEL_TAG_V2PRO, "version": 1})()
     mock_repo_cls.return_value.create_version.return_value = row
 
+    mock_align.return_value = ("测试参考文本用于快速克隆训练。", True)
     with patch("workers.train.quick_clone_adapter.get_settings") as gs:
         gs.return_value.storage_root = str(storage_root)
         gs.return_value.engine_train_sample_text = "测试参考文本用于快速克隆训练。"
@@ -103,5 +105,8 @@ def test_quick_clone_creates_version(mock_session, mock_repo_cls, mock_resolve_s
     assert call_kw["metadata"]["mock"] is False
     assert call_kw["metadata"]["engine_ref_audio_container"].endswith(f"{JOB}.wav")
     assert call_kw["metadata"]["engine_use_base_weights"] is True
+    assert call_kw["metadata"]["temperature"] == 0.68
+    assert call_kw["metadata"]["speed_factor"] == 1.0
+    assert call_kw["metadata"]["top_p"] == 0.95
     assert call_kw["metadata"]["engine_gpt_weights"]
     assert call_kw["metadata"]["engine_sovits_weights"]

@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import type { VoicePickerItem } from "@/components/VoicePicker.vue";
+import { precheckSynthesisText, type TextComplianceIssue } from "@/api/compliance";
 import { recommendSynthParams } from "@/api/intelligence";
 import MakeActionBar from "@/modules/produce/components/MakeActionBar.vue";
 import ScriptEditor from "@/modules/produce/components/ScriptEditor.vue";
 import RackPanel from "@/modules/voice/components/studio/RackPanel.vue";
 import TapePlayer from "@/modules/voice/components/studio/TapePlayer.vue";
 import TapeReel from "@/modules/voice/components/studio/TapeReel.vue";
-import { validateSynthesisScript, type ScriptSegment, type ProduceWorkMode } from "@/modules/produce/types/script";
+import { validateSynthesisScript, usesSegmentSynthesis, type ScriptSegment, type ProduceWorkMode } from "@/modules/produce/types/script";
 import {
   applySmartSynthToSegment,
   EMOTION_OPTIONS,
@@ -48,14 +49,74 @@ const emit = defineEmits<{ generate: []; reload: [] }>();
 const hasText = () => segments.value.some((s) => s.text.trim());
 const isStudio = () => props.variant === "studio";
 
-const synthCheck = computed(() =>
-  validateSynthesisScript(segments.value, {
+const synthCheck = computed(() => {
+  const base = validateSynthesisScript(segments.value, {
     speed: speed.value,
     temperature: temperature.value,
     emotion: emotion.value,
     emotionStrength: emotionStrength.value,
-  }),
-);
+  });
+  if (!base.ok) return base;
+  if (complianceIssues.value.length) {
+    return { ok: false as const, message: complianceIssues.value[0].message };
+  }
+  return { ok: true as const };
+});
+
+const PARAM_PRESETS = [
+  { id: "natural", label: "自然朗读", speed: 1.0, temperature: 0.75, emotion: null as string | null, emotionStrength: 0.45 },
+  { id: "drama", label: "戏剧张力", speed: 1.12, temperature: 0.92, emotion: "angry", emotionStrength: 0.72 },
+  { id: "news", label: "新闻播报", speed: 1.05, temperature: 0.62, emotion: "calm", emotionStrength: 0.35 },
+] as const;
+
+const complianceIssues = ref<TextComplianceIssue[]>([]);
+const complianceLoading = ref(false);
+let complianceTimer: ReturnType<typeof setTimeout> | null = null;
+
+function applyPreset(preset: (typeof PARAM_PRESETS)[number]) {
+  speed.value = preset.speed;
+  temperature.value = preset.temperature;
+  emotion.value = preset.emotion;
+  emotionStrength.value = preset.emotionStrength;
+  tunePending.value = true;
+}
+
+function scheduleComplianceCheck() {
+  if (complianceTimer) clearTimeout(complianceTimer);
+  complianceTimer = setTimeout(() => void runComplianceCheck(), 450);
+}
+
+async function runComplianceCheck() {
+  const texts = segments.value.map((s) => s.text).filter((t) => t.trim());
+  if (!texts.length) {
+    complianceIssues.value = [];
+    return;
+  }
+  complianceLoading.value = true;
+  try {
+    const resp = await precheckSynthesisText({
+      texts,
+      segmented: usesSegmentSynthesis(segments.value, {
+        speed: speed.value,
+        temperature: temperature.value,
+        emotion: emotion.value,
+        emotionStrength: emotionStrength.value,
+      }),
+    });
+    complianceIssues.value = resp.issues;
+  } catch {
+    complianceIssues.value = [];
+  } finally {
+    complianceLoading.value = false;
+  }
+}
+
+watch(segments, scheduleComplianceCheck, { deep: true });
+watch([speed, temperature, emotion, emotionStrength, multiMode], scheduleComplianceCheck);
+
+onMounted(() => {
+  void runComplianceCheck();
+});
 
 const selectedVoice = computed(() => props.voices.find((v) => v.id === voiceId.value));
 
@@ -148,6 +209,18 @@ async function onSmartRecommend() {
           <span class="ws-voice-bar__label">表演</span>
           <div class="ws-perform-wrap">
             <div class="ws-perform-main">
+              <div class="ws-preset-row">
+                <button
+                  v-for="preset in PARAM_PRESETS"
+                  :key="preset.id"
+                  type="button"
+                  class="ws-preset-chip"
+                  :disabled="busy"
+                  @click="applyPreset(preset)"
+                >
+                  {{ preset.label }}
+                </button>
+              </div>
               <select
                 v-model="emotion"
                 class="ws-emotion-select"
@@ -170,10 +243,15 @@ async function onSmartRecommend() {
               >
                 {{ smartLoading ? "分析中…" : "智能推荐" }}
               </button>
-              <span class="ws-perform-meta">{{ emotionLabel }} · 强度 {{ emotionStrength.toFixed(1) }}</span>
+              <span class="ws-perform-meta">{{ emotionLabel }}</span>
             </div>
+            <label class="ws-inline-param ws-inline-param--inline">
+              <span>情感强度</span>
+              <input type="range" min="0" max="1" step="0.05" :value="emotionStrength" @input="emotionStrength = +($event.target as HTMLInputElement).value" />
+              <span class="ws-inline-param__val">{{ emotionStrength.toFixed(2) }}</span>
+            </label>
             <p v-if="smartHint" class="ws-smart-hint">{{ smartHint }}</p>
-            <details class="ws-advanced">
+            <details class="ws-advanced" open>
               <summary>高级韵律</summary>
               <div class="ws-voice-bar__tune ws-voice-bar__tune--nested">
                 <label class="ws-inline-param">
@@ -186,15 +264,27 @@ async function onSmartRecommend() {
                   <input type="range" min="0.3" max="1.5" step="0.02" :value="temperature" @input="temperature = +($event.target as HTMLInputElement).value" />
                   <span class="ws-inline-param__val">{{ temperature.toFixed(2) }}</span>
                 </label>
-                <label class="ws-inline-param">
-                  <span>强度</span>
-                  <input type="range" min="0" max="1" step="0.05" :value="emotionStrength" @input="emotionStrength = +($event.target as HTMLInputElement).value" />
-                  <span class="ws-inline-param__val">{{ emotionStrength.toFixed(2) }}</span>
-                </label>
               </div>
             </details>
           </div>
         </div>
+      </div>
+
+      <div
+        v-if="variant === 'full' && (complianceLoading || complianceIssues.length)"
+        class="ws-compliance"
+        :class="{ 'ws-compliance--error': complianceIssues.length }"
+      >
+        <p v-if="complianceLoading" class="ws-compliance__text">正在检查台本合规性…</p>
+        <template v-else>
+          <p class="ws-compliance__title">台本合规提示</p>
+          <ul class="ws-compliance__list">
+            <li v-for="(issue, idx) in complianceIssues" :key="`${issue.code}-${idx}`">
+              <span v-if="issue.segment_index != null">第 {{ issue.segment_index + 1 }} 段：</span>
+              {{ issue.message }}
+            </li>
+          </ul>
+        </template>
       </div>
 
       <!-- 区域2: 文稿编辑 -->
@@ -486,7 +576,7 @@ async function onSmartRecommend() {
   background: var(--color-vu-amber-soft);
   font-size: 12px;
   font-weight: 600;
-  color: #8a5a24;
+  color: var(--theme-warm);
   cursor: pointer;
   transition: border-color 0.15s, background-color 0.15s;
 }
@@ -569,6 +659,66 @@ async function onSmartRecommend() {
   text-align: right;
 }
 
+.ws-preset-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+}
+
+.ws-preset-chip {
+  padding: 5px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  background: var(--bg-surface);
+  font-size: 12px;
+  color: var(--color-ink-muted);
+  cursor: pointer;
+}
+
+.ws-preset-chip:hover:not(:disabled) {
+  border-color: var(--theme-warm-soft);
+  color: var(--color-ink);
+  background: var(--theme-warm-dim);
+}
+
+.ws-inline-param--inline {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.ws-compliance {
+  margin: 0 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--theme-warm-soft);
+  border-radius: var(--radius-ui);
+  background: var(--theme-warm-dim);
+}
+
+.ws-compliance--error {
+  border-color: rgb(200 90 74 / 0.35);
+  background: var(--color-cinnabar-soft);
+}
+
+.ws-compliance__title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-ink);
+}
+
+.ws-compliance__text,
+.ws-compliance__list {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--color-ink-muted);
+}
+
+.ws-compliance__list {
+  padding-left: 18px;
+}
+
 /* ── 文稿区 ──────────────────────────────────────── */
 .ws-script {
   display: flex;
@@ -616,7 +766,7 @@ async function onSmartRecommend() {
 .ws-playback__export:hover {
   border-color: var(--color-vu-amber);
   background: var(--color-vu-amber-soft);
-  color: #8a5a24;
+  color: var(--theme-warm);
 }
 
 :deep(.ws-playback-body) {

@@ -13,4 +13,16 @@ export const produceRoutes: RouteRecordRaw[] = [
     component: () => import("@/modules/produce/views/ProjectView.vue"),
     meta: { shell: "workbench", module: "produce", requiresAuth: true },
   },
+  {
+    path: "/account",
+    name: "account",
+    component: () => import("@/modules/produce/views/AccountView.vue"),
+    meta: { shell: "workbench", module: "produce", requiresAuth: true },
+  },
+  {
+    path: "/history",
+    name: "history",
+    component: () => import("@/modules/produce/views/SynthesisHistoryView.vue"),
+    meta: { shell: "workbench", module: "produce", requiresAuth: true },
+  },
 ];

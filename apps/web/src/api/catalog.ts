@@ -13,7 +13,9 @@ export interface CatalogEntry {
   demo_text?: string;
   demo_audio_url?: string | null;
   demo_job_id?: string | null;
+  cover_image_url?: string | null;
   owner_user_id: string;
+  owner_display_name?: string;
   can_use: boolean;
   license_type: string;
   price_cents: number;
@@ -206,6 +208,7 @@ export interface CreatorProfile {
   user_id: string;
   display_name: string;
   bio: string;
+  avatar_url?: string | null;
   published_count: number;
   voices: CatalogEntry[];
 }
@@ -280,6 +283,7 @@ export async function publishToCatalog(body: {
   tags?: string[];
   featured?: boolean;
   demo_text?: string;
+  cover_image_url?: string;
   license_type?: string;
   price_cents?: number;
   billing_unit?: string;
@@ -288,6 +292,65 @@ export async function publishToCatalog(body: {
 }) {
   return apiJson<CatalogEntry>("/api/v1/catalog/voices", {
     method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export interface CatalogCoverGenerateResult {
+  cover_image_url: string;
+  prompt?: string;
+}
+
+export async function generateCatalogCover(body: {
+  title: string;
+  tags?: string[];
+  prompt?: string;
+}) {
+  return apiJson<CatalogCoverGenerateResult>("/api/v1/catalog/voices/generate-cover", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function uploadCatalogCoverDraft(file: File) {
+  const form = new FormData();
+  form.append("file", file);
+  return apiJson<CatalogCoverGenerateResult>("/api/v1/catalog/voices/cover/upload", {
+    method: "POST",
+    body: form,
+  });
+}
+
+export async function generateCatalogCoverForEntry(
+  catalogId: string,
+  body?: { title: string; tags?: string[]; prompt?: string },
+) {
+  return apiJson<CatalogEntry>(`/api/v1/catalog/voices/${catalogId}/generate-cover`, {
+    method: "POST",
+    body: body ? JSON.stringify(body) : undefined,
+  });
+}
+
+export async function uploadCatalogCoverForEntry(catalogId: string, file: File) {
+  const form = new FormData();
+  form.append("file", file);
+  return apiJson<CatalogEntry>(`/api/v1/catalog/voices/${catalogId}/cover/upload`, {
+    method: "POST",
+    body: form,
+  });
+}
+
+export async function updateCatalogEntry(
+  catalogId: string,
+  body: {
+    title?: string;
+    description?: string;
+    tags?: string[];
+    cover_image_url?: string;
+  },
+) {
+  return apiJson<CatalogEntry>(`/api/v1/catalog/voices/${catalogId}`, {
+    method: "PATCH",
     body: JSON.stringify(body),
   });
 }

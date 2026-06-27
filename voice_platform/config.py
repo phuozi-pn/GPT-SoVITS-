@@ -86,6 +86,20 @@ class AuthConfig(BaseSettings):
     dev_skip_auth: bool = True
     dev_user_id: str = "00000000-0000-0000-0000-000000000001"
     dev_admin_user_id: str = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    resend_api_key: str = ""
+    resend_from_email: str = ""
+    resend_api_base: str = "https://api.resend.com"
+
+    @staticmethod
+    def normalize_api_key(raw: str) -> str:
+        key = (raw or "").strip()
+        if key.lower().startswith("apikey,"):
+            key = key.split(",", 1)[1].strip()
+        return key
+
+    @property
+    def resend_api_key_normalized(self) -> str:
+        return self.normalize_api_key(self.resend_api_key)
 
 
 class QuotaConfig(BaseSettings):
@@ -126,6 +140,10 @@ class AssetConfig(BaseSettings):
     asr_device: str = "cpu"
     asr_compute_type: str = "int8"
     asr_mock_text: str = "这是一段用于开发测试的自动识别参考文本。"
+    asset_enhance_enabled: bool = True
+    asset_enhance_profile: str = "clarity"
+    asset_enhance_target_lufs: float = -18.0
+    asset_enhance_sample_rate: int = 32000
 
 
 class QualityConfig(BaseSettings):
@@ -196,6 +214,31 @@ class ObservabilityConfig(BaseSettings):
     alert_webhook_format: str = "feishu"  # feishu | generic
 
 
+class ImageGenConfig(BaseSettings):
+    """通义万相（DashScope）文生图 — 音色馆封面。"""
+
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    dashscope_api_key: str = ""
+    dashscope_base_url: str = "https://dashscope.aliyuncs.com/api/v1"
+    dashscope_wanx_model: str = "wan2.2-t2i-flash"
+    dashscope_wanx_size: str = "1024*1024"
+    dashscope_wanx_negative_prompt: str = "文字, 水印, 真人照片, 模糊, 畸形, 低质量"
+    dashscope_wanx_poll_interval_sec: float = 2.0
+    dashscope_wanx_poll_timeout_sec: float = 120.0
+    catalog_cover_gen_enabled: bool = False
+
+    @staticmethod
+    def normalize_api_key(raw: str) -> str:
+        key = (raw or "").strip()
+        if key.lower().startswith("apikey,"):
+            key = key.split(",", 1)[1].strip()
+        return key
+
+    @property
+    def dashscope_api_key_normalized(self) -> str:
+        return self.normalize_api_key(self.dashscope_api_key)
+
+
 class WebConfig(BaseSettings):
     """Web / CORS 配置。"""
 
@@ -233,6 +276,7 @@ class Settings(BaseSettings):
         _set(self, "payment", PaymentConfig())
         _set(self, "script", ScriptConfig())
         _set(self, "observability", ObservabilityConfig())
+        _set(self, "image_gen", ImageGenConfig())
         _set(self, "web", WebConfig())
 
     # ── 属性代理：保持 get_settings().database_url 等访问方式兼容 ──
@@ -418,6 +462,22 @@ class Settings(BaseSettings):
     def dev_admin_user_id(self) -> str:
         return self.auth.dev_admin_user_id
 
+    @property
+    def resend_api_key(self) -> str:
+        return self.auth.resend_api_key_normalized
+
+    @property
+    def resend_from_email(self) -> str:
+        return (self.auth.resend_from_email or "").strip()
+
+    @property
+    def resend_api_base(self) -> str:
+        return self.auth.resend_api_base
+
+    @property
+    def resend_configured(self) -> bool:
+        return bool(self.resend_api_key and self.resend_from_email)
+
     # Quota
     @property
     def quota_monthly_char_limit(self) -> int:
@@ -508,6 +568,22 @@ class Settings(BaseSettings):
     @property
     def asset_asr_mock_text(self) -> str:
         return self.asset.asr_mock_text
+
+    @property
+    def asset_enhance_enabled(self) -> bool:
+        return self.asset.asset_enhance_enabled
+
+    @property
+    def asset_enhance_profile(self) -> str:
+        return self.asset.asset_enhance_profile
+
+    @property
+    def asset_enhance_target_lufs(self) -> float:
+        return self.asset.asset_enhance_target_lufs
+
+    @property
+    def asset_enhance_sample_rate(self) -> int:
+        return self.asset.asset_enhance_sample_rate
 
     # Quality
     @property
@@ -669,6 +745,39 @@ class Settings(BaseSettings):
     @property
     def alert_webhook_format(self) -> str:
         return self.observability.alert_webhook_format
+
+    # Image generation (DashScope 万相)
+    @property
+    def dashscope_api_key(self) -> str:
+        return self.image_gen.dashscope_api_key_normalized
+
+    @property
+    def dashscope_base_url(self) -> str:
+        return self.image_gen.dashscope_base_url
+
+    @property
+    def dashscope_wanx_model(self) -> str:
+        return self.image_gen.dashscope_wanx_model
+
+    @property
+    def dashscope_wanx_size(self) -> str:
+        return self.image_gen.dashscope_wanx_size
+
+    @property
+    def dashscope_wanx_negative_prompt(self) -> str:
+        return self.image_gen.dashscope_wanx_negative_prompt
+
+    @property
+    def dashscope_wanx_poll_interval_sec(self) -> float:
+        return self.image_gen.dashscope_wanx_poll_interval_sec
+
+    @property
+    def dashscope_wanx_poll_timeout_sec(self) -> float:
+        return self.image_gen.dashscope_wanx_poll_timeout_sec
+
+    @property
+    def catalog_cover_gen_enabled(self) -> bool:
+        return self.image_gen.catalog_cover_gen_enabled
 
     # Web
     @property

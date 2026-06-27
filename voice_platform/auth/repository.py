@@ -8,6 +8,7 @@ from sqlalchemy import desc, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from voice_platform.auth.identifiers import normalize_email
 from voice_platform.auth.models import UserRow
 
 
@@ -26,6 +27,21 @@ class UserRepository:
             .limit(limit)
         )
         return list(self._session.scalars(stmt).all())
+
+    def get_by_email(self, email: str) -> UserRow | None:
+        normalized = normalize_email(email)
+        return self._session.scalars(select(UserRow).where(UserRow.email == normalized)).first()
+
+    def get_or_create_by_email(self, email: str) -> UserRow:
+        normalized = normalize_email(email)
+        row = self.get_by_email(normalized)
+        if row:
+            return row
+        row = UserRow(id=uuid4(), phone=None, email=normalized, status="active", verified=False)
+        self._session.add(row)
+        self._session.commit()
+        self._session.refresh(row)
+        return row
 
     def get_by_phone(self, phone: str) -> UserRow | None:
         return self._session.scalars(select(UserRow).where(UserRow.phone == phone)).first()

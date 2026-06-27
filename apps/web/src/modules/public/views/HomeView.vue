@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { APP_MODULES, DEFAULT_WORKBENCH_ROUTE } from "@/architecture/modules";
+import HomeShowcase from "@/modules/public/components/HomeShowcase.vue";
 import { hasAppSession } from "@/utils/session";
 
 const router = useRouter();
@@ -42,24 +43,28 @@ function go(path: string) {
         </p>
         <h1 class="home__title">Phonia</h1>
         <p class="home__lead">
-          一人一音，一文一声。声纹克隆与文本转语音：
-          短剧批量出片、多人情景对话、歌曲分段念唱。
+          平台精选授权音色，先试听样音再下单；也可上传干声训练专属声纹，
+          短剧批量出片、多人情景对话一站完成。
         </p>
         <div class="home__actions">
+          <router-link to="/browse" class="home__btn home__btn--primary deco-breath-glow">
+            试听精选音色
+          </router-link>
           <button
             type="button"
-            class="home__btn home__btn--primary deco-breath-glow"
+            class="home__btn home__btn--ghost"
             @click="go(DEFAULT_WORKBENCH_ROUTE)"
           >
-            {{ loggedIn ? "进入工作台" : "免费开始使用" }}
+            {{ loggedIn ? "进入工作台" : "免费注册使用" }}
           </button>
-          <router-link to="/browse" class="home__btn home__btn--ghost">浏览音色馆</router-link>
         </div>
       </div>
 
       <!-- Hero 底部装饰线 -->
       <hr class="deco-scroll-rule" aria-hidden="true" />
     </section>
+
+    <HomeShowcase />
 
     <!-- 核心工作流速览 — 瀑布入场 -->
     <section class="home__flow" aria-label="工作流">
@@ -154,15 +159,19 @@ function go(path: string) {
 
     <!-- 底部 CTA -->
     <section class="home__cta deco-gold-sweep">
-      <h2 class="home__cta-title">准备好开始了吗？</h2>
-      <p class="home__cta-desc">无需下载，浏览器打开即用。几分钟内出片。</p>
-      <button
-        type="button"
-        class="home__btn home__btn--primary home__btn--lg"
-        @click="go(DEFAULT_WORKBENCH_ROUTE)"
-      >
-        {{ loggedIn ? "进入工作台" : "免费注册开始" }}
-      </button>
+      <h2 class="home__cta-title">找到心仪的音色了吗？</h2>
+      <p class="home__cta-desc">无需下载，浏览器打开即可试听；购买授权后立刻用于合成出片。</p>
+      <div class="home__cta-actions">
+        <router-link to="/browse" class="home__btn home__btn--primary home__btn--lg">进入音色馆</router-link>
+        <button
+          v-if="!loggedIn"
+          type="button"
+          class="home__btn home__btn--ghost home__btn--lg"
+          @click="go(DEFAULT_WORKBENCH_ROUTE)"
+        >
+          免费注册
+        </button>
+      </div>
     </section>
   </div>
 </template>
@@ -549,6 +558,13 @@ function go(path: string) {
   margin: 0 0 28px;
   font-size: 15px;
   color: var(--color-ink-muted);
+}
+
+.home__cta-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
 }
 
 /* ── 无障碍 ── */

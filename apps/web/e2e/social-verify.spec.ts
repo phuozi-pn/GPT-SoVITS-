@@ -39,7 +39,7 @@ test.describe("金路径 · 购买与验真", () => {
     await page.getByRole("link", { name: "授权验真" }).click();
     await expect(page).toHaveURL(/\/verify\//);
     await expect(page.getByText("授权有效")).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByText("E2E 演示音色")).toBeVisible();
+    await expect(page.getByText("龙渊 · 沉稳男声")).toBeVisible();
   });
 
   test("访客可读取验真结果", async ({ page, context }) => {
@@ -52,7 +52,7 @@ test.describe("金路径 · 购买与验真", () => {
     await clearAppSession(guest);
     await guest.goto(verifyHref!);
     await expect(guest.getByText("授权有效")).toBeVisible({ timeout: 15_000 });
-    await expect(guest.getByText("E2E 演示音色")).toBeVisible();
+    await expect(guest.getByText("龙渊 · 沉稳男声")).toBeVisible();
     await guest.close();
   });
 
@@ -62,7 +62,7 @@ test.describe("金路径 · 购买与验真", () => {
     await checkout.getByRole("button", { name: "关闭", exact: true }).last().click();
     await page.getByRole("button", { name: "我的授权" }).click();
     const auths = page.getByRole("dialog", { name: "我的音色授权" });
-    await expect(auths.getByText(/E2E 演示音色 · active/)).toBeVisible();
+    await expect(auths.getByText(/龙渊 · 沉稳男声 · active/)).toBeVisible();
     await auths.getByRole("link", { name: "验真" }).click();
     await expect(page.getByText("授权有效")).toBeVisible({ timeout: 15_000 });
   });

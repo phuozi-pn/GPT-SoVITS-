@@ -15,10 +15,12 @@ import {
   fetchProjects,
   fetchVoiceVersions,
   submitBatchCsv,
+  unbindProjectRole,
   type ProjectSummary,
   type VoiceVersionSummary,
 } from "@/api/library";
 import { formatApiError } from "@/utils/apiErrors";
+import { voiceOriginLabel } from "@/utils/voiceOriginDisplay";
 import AppModal from "@/components/AppModal.vue";
 import DetailStrip from "@/components/DetailStrip.vue";
 import DetailStripItem from "@/components/DetailStripItem.vue";
@@ -106,18 +108,47 @@ async function onCreateProject() {
 
 async function onBindRole() {
   if (!selectedProjectId.value) return;
+  const name = roleName.value.trim();
+  if (!name) {
+    error.value = "请填写角色名";
+    return;
+  }
   error.value = "";
   busy.value = true;
   busyLabel.value = "绑定角色…";
   try {
-    await bindProjectRole(selectedProjectId.value, roleName.value.trim(), roleVoiceId.value);
-    showBind.value = false;
+    await bindProjectRole(selectedProjectId.value, name, roleVoiceId.value);
+    await reload();
+    roleName.value = "";
+  } catch (e) {
+    error.value = formatApiError(e);
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function onUnbindRole(roleId: string, roleNameLabel: string) {
+  if (!selectedProjectId.value || busy.value) return;
+  if (!window.confirm(`确定解绑角色「${roleNameLabel}」？解绑后 CSV 中该角色名将无法批量合成，需重新绑定。`)) {
+    return;
+  }
+  error.value = "";
+  busy.value = true;
+  busyLabel.value = "解绑角色…";
+  try {
+    await unbindProjectRole(selectedProjectId.value, roleId);
     await reload();
   } catch (e) {
     error.value = formatApiError(e);
   } finally {
     busy.value = false;
   }
+}
+
+function voiceLabel(voiceVersionId: string) {
+  const v = versions.value.find((item) => item.voice_version_id === voiceVersionId);
+  if (!v) return `${voiceVersionId.slice(0, 8)}…`;
+  return `${v.voice_name} v${v.version} · ${voiceOriginLabel(v.train_mode, v.imported)}`;
 }
 
 function onPollProgress(j: JobResponse) {
@@ -275,12 +306,22 @@ function goLibrary() {
           </label>
 
           <ul v-if="currentProject?.roles.length" class="grant-list">
-            <li v-for="r in currentProject!.roles" :key="r.role_id">
-              <span>{{ r.role_name }}</span>
-              <span class="hint">{{ r.voice_version_id.slice(0, 8) }}…</span>
+            <li v-for="r in currentProject!.roles" :key="r.role_id" class="role-bind-row">
+              <span class="role-bind-row__name">{{ r.role_name }}</span>
+              <span class="hint role-bind-row__voice">{{ voiceLabel(r.voice_version_id) }}</span>
+              <button
+                type="button"
+                class="text-action text-action--danger role-bind-row__unbind"
+                :disabled="busy"
+                @click="onUnbindRole(r.role_id, r.role_name)"
+              >
+                解绑
+              </button>
             </li>
           </ul>
-          <p v-else-if="selectedProjectId" class="hint">还没有绑定角色——点击「绑定角色」</p>
+          <p v-else-if="selectedProjectId" class="hint">
+            还没有绑定角色——点击「绑定角色」；多角色须分别绑定，如掌柜、侠客、旁白各绑一次。
+          </p>
         </section>
 
         <section class="batch-section">
@@ -454,29 +495,45 @@ function goLibrary() {
       </template>
     </AppModal>
 
-    <AppModal :open="showBind" label="角色" title="绑定角色" @close="showBind = false">
-      <p class="hint modal-hint">CSV 中的 <code>role</code> 列须与角色名一致（如 <code>龙宫</code>）。</p>
+    <AppModal :open="showBind" label="角色" title="添加角色绑定" @close="showBind = false">
+      <p class="hint modal-hint">
+        每个 CSV 角色需单独绑定一次音色。<strong>不同角色名请重复打开本弹窗添加</strong>；已绑定角色可点「解绑」移除。
+      </p>
+      <ul v-if="currentProject?.roles.length" class="grant-list modal-role-list">
+        <li v-for="r in currentProject!.roles" :key="r.role_id" class="role-bind-row">
+          <span class="role-bind-row__name">{{ r.role_name }}</span>
+          <span class="hint role-bind-row__voice">{{ voiceLabel(r.voice_version_id) }}</span>
+          <button
+            type="button"
+            class="text-action text-action--danger role-bind-row__unbind"
+            :disabled="busy"
+            @click="onUnbindRole(r.role_id, r.role_name)"
+          >
+            解绑
+          </button>
+        </li>
+      </ul>
       <div class="form-grid">
-        <label>角色名<input v-model="roleName" placeholder="龙宫" /></label>
+        <label>角色名<input v-model="roleName" placeholder="如：侠客、旁白" /></label>
         <label>
           音色版本
           <select v-model="roleVoiceId" :disabled="busy">
             <option v-for="v in versions" :key="v.voice_version_id" :value="v.voice_version_id">
-              {{ v.voice_name }} v{{ v.version }}
+              {{ v.voice_name }} v{{ v.version }} · {{ voiceOriginLabel(v.train_mode, v.imported) }}
             </option>
           </select>
         </label>
       </div>
       <p v-if="!versions.length" class="hint warn">还没有音色版本——请先到训练工作台或智能配音导入权重。</p>
       <template #footer>
-        <button type="button" class="btn btn--ghost btn--sm" @click="showBind = false">取消</button>
+        <button type="button" class="btn btn--ghost btn--sm" @click="showBind = false">完成</button>
         <button
           type="button"
           class="btn btn--primary btn--sm"
-          :disabled="busy || !selectedProjectId || !versions.length"
+          :disabled="busy || !selectedProjectId || !versions.length || !roleName.trim()"
           @click="onBindRole"
         >
-          绑定
+          {{ busy ? "绑定中…" : "添加绑定" }}
         </button>
       </template>
     </AppModal>
@@ -490,6 +547,31 @@ function goLibrary() {
 
 .batch-strip {
   margin-bottom: 22px;
+}
+
+.modal-role-list {
+  margin: 0 0 14px;
+}
+
+.role-bind-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) auto;
+  gap: 8px 12px;
+  align-items: center;
+}
+
+.role-bind-row__name {
+  font-weight: 500;
+}
+
+.role-bind-row__voice {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.role-bind-row__unbind {
+  justify-self: end;
 }
 
 .batch-section {

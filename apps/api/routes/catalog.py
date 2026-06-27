@@ -5,10 +5,14 @@ from uuid import UUID
 from apps.api.deps import get_current_user_id, get_session, get_viewer_user_id, require_admin_user
 from apps.api.exceptions import parse_tag_query, raise_domain_http
 from domains.marketplace.service import MarketplaceService, MarketplaceServiceError
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, File, UploadFile
 from sqlalchemy.orm import Session
 from voice_platform.job.schemas import (
+    CatalogCoverGenerateRequest,
+    CatalogCoverGenerateResponse,
+    CatalogCoverUploadResponse,
     CatalogEntryResponse,
+    CatalogEntryUpdateRequest,
     CatalogPublishRequest,
     CatalogRejectRequest,
     CreatorProfileResponse,
@@ -87,6 +91,91 @@ def publish_catalog_voice(
 ) -> CatalogEntryResponse:
     try:
         return MarketplaceService(session).publish_to_catalog(owner_user_id=user_id, body=body)
+    except MarketplaceServiceError as exc:
+        raise_domain_http(exc)
+
+
+@router.post("/catalog/voices/generate-cover", response_model=CatalogCoverGenerateResponse)
+def generate_catalog_cover_preview(
+    body: CatalogCoverGenerateRequest,
+    user_id: UUID = Depends(get_current_user_id),
+    session: Session = Depends(get_session),
+) -> CatalogCoverGenerateResponse:
+    try:
+        return MarketplaceService(session).generate_catalog_cover_preview(
+            owner_user_id=user_id,
+            body=body,
+        )
+    except MarketplaceServiceError as exc:
+        raise_domain_http(exc)
+
+
+@router.post("/catalog/voices/cover/upload", response_model=CatalogCoverUploadResponse)
+async def upload_catalog_cover_draft(
+    file: UploadFile = File(...),
+    user_id: UUID = Depends(get_current_user_id),
+    session: Session = Depends(get_session),
+) -> CatalogCoverUploadResponse:
+    try:
+        data = await file.read()
+        return MarketplaceService(session).upload_catalog_cover_draft(
+            owner_user_id=user_id,
+            data=data,
+            filename=file.filename or "cover.png",
+        )
+    except MarketplaceServiceError as exc:
+        raise_domain_http(exc)
+
+
+@router.post("/catalog/voices/{catalog_id}/generate-cover", response_model=CatalogEntryResponse)
+def generate_catalog_cover_for_entry(
+    catalog_id: UUID,
+    body: CatalogCoverGenerateRequest | None = None,
+    user_id: UUID = Depends(get_current_user_id),
+    session: Session = Depends(get_session),
+) -> CatalogEntryResponse:
+    try:
+        return MarketplaceService(session).generate_catalog_cover_for_entry(
+            catalog_id=catalog_id,
+            owner_user_id=user_id,
+            body=body,
+        )
+    except MarketplaceServiceError as exc:
+        raise_domain_http(exc)
+
+
+@router.post("/catalog/voices/{catalog_id}/cover/upload", response_model=CatalogEntryResponse)
+async def upload_catalog_cover_for_entry(
+    catalog_id: UUID,
+    file: UploadFile = File(...),
+    user_id: UUID = Depends(get_current_user_id),
+    session: Session = Depends(get_session),
+) -> CatalogEntryResponse:
+    try:
+        data = await file.read()
+        return MarketplaceService(session).upload_catalog_cover_for_entry(
+            catalog_id=catalog_id,
+            owner_user_id=user_id,
+            data=data,
+            filename=file.filename or "cover.png",
+        )
+    except MarketplaceServiceError as exc:
+        raise_domain_http(exc)
+
+
+@router.patch("/catalog/voices/{catalog_id}", response_model=CatalogEntryResponse)
+def update_catalog_entry(
+    catalog_id: UUID,
+    body: CatalogEntryUpdateRequest,
+    user_id: UUID = Depends(get_current_user_id),
+    session: Session = Depends(get_session),
+) -> CatalogEntryResponse:
+    try:
+        return MarketplaceService(session).update_catalog_entry(
+            catalog_id=catalog_id,
+            owner_user_id=user_id,
+            body=body,
+        )
     except MarketplaceServiceError as exc:
         raise_domain_http(exc)
 

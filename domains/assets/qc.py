@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from domains.assets.convert import CONVERTIBLE_EXTENSIONS, ensure_wav
+from domains.assets.enhance import enhance_wav_in_place
 from domains.assets.errors import AssetQcError
 from voice_platform.config import get_settings
 from voice_platform.job.schemas import QcIssue, QcResult
@@ -45,6 +46,22 @@ def run_qc(
         raise AssetQcError("INVALID_AUDIO_FORMAT", f"Unsupported format: {ext or '(none)'}")
 
     wav_path = ensure_wav(path) if ext != ".wav" else path
+
+    audio_enhanced = False
+    enhance_note: str | None = None
+    if settings.asset_enhance_enabled:
+        meta = enhance_wav_in_place(
+            wav_path,
+            profile=settings.asset_enhance_profile,
+            target_lufs=settings.asset_enhance_target_lufs,
+            sample_rate=settings.asset_enhance_sample_rate,
+        )
+        if meta.get("applied"):
+            audio_enhanced = True
+            enhance_note = str(meta.get("profile") or "clarity")
+        elif meta.get("reason"):
+            enhance_note = f"skipped:{meta['reason']}"
+
     probe = probe_wav(wav_path)
     issues: list[QcIssue] = []
 
@@ -85,4 +102,6 @@ def run_qc(
         channels=probe.channels,
         issues=issues,
         ref_text=ref_text,
+        audio_enhanced=audio_enhanced,
+        enhance_note=enhance_note,
     )

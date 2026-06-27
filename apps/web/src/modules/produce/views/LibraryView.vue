@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import { ApiError, pollJob, synthesize, exportDownloadUrl } from "@/api/client";
+import { fetchSynthesisHistory, type SynthesisHistoryItem } from "@/api/history";
 import {
   fetchVoiceVersions,
   importEngineWeights,
@@ -18,6 +19,7 @@ import PageHero from "@/components/PageHero.vue";
 import PageSurface from "@/components/PageSurface.vue";
 import { getPageMeta } from "@/config/navigation";
 import { formatApiError } from "@/utils/apiErrors";
+import { voiceOriginLabel, voicePickerBadge, voicePickerOriginKind } from "@/utils/voiceOriginDisplay";
 import { useToast } from "@/composables/useToast";
 import { PROJECT_TYPE_OPTIONS } from "@/api/marketplace";
 import { buildSynthesisPayload, estimateSynthPollTimeoutMs, newSegment, validateSynthesisScript } from "@/modules/produce/types/script";
@@ -31,7 +33,36 @@ type HistoryItem = {
   textPreview: string;
   audioUrl: string;
   createdAt: string;
+  jobId: string;
 };
+
+function mapHistoryItem(row: SynthesisHistoryItem): HistoryItem {
+  const name = row.voice_name ?? "未知音色";
+  const label = row.voice_version_label?.trim();
+  return {
+    id: row.job_id,
+    jobId: row.job_id,
+    title: label ? `${name} · ${label}` : name,
+    subtitle: row.status,
+    textPreview: row.text_preview,
+    audioUrl: row.audio_url ?? "",
+    createdAt: new Date(row.created_at).toLocaleString("zh-CN", {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    }),
+  };
+}
+
+async function reloadHistory() {
+  try {
+    const rows = await fetchSynthesisHistory(12);
+    history.value = rows.filter((r) => r.status === "succeeded" && r.audio_url).map(mapHistoryItem);
+  } catch {
+    /* 历史加载失败不阻塞主流程 */
+  }
+}
 
 const pageMeta = getPageMeta("/library", "library");
 const { toastOk } = useToast();
@@ -81,11 +112,13 @@ const pickerItems = computed(() =>
     .filter((v) => v.synth_ready !== false)
     .map((v) => ({
     id: v.voice_version_id,
-    title: v.voice_name,
-    subtitle: `v${v.version} · ${v.voice_version_id.slice(0, 8)}…`,
-    tags: [v.label, v.imported ? "已导入" : "", v.granted ? "已授权" : ""].filter(Boolean) as string[],
-    badge: v.granted ? "授权" : v.imported ? "导入" : undefined,
+    title: v.label?.trim() || v.voice_name,
+    subtitle: `${voiceOriginLabel(v.train_mode, v.imported)} · v${v.version}`,
+    tags: [v.label, v.granted ? "已授权" : ""].filter(Boolean) as string[],
+    badge: voicePickerBadge(v),
+    originKind: voicePickerOriginKind(v.train_mode, v.imported),
     synthReady: v.synth_ready !== false,
+    previewAudioUrl: v.preview_audio_url ?? null,
   })),
 );
 
@@ -93,16 +126,8 @@ const selectedVoice = computed(() => versions.value.find((v) => v.voice_version_
 const selectedPicker = computed(() => pickerItems.value.find((p) => p.id === synthVersionId.value));
 const hasVoices = computed(() => versions.value.length > 0);
 
-function pushHistory(voice: VoiceVersionSummary, text: string, url: string) {
-  history.value.unshift({
-    id: `${Date.now()}`,
-    title: `${voice.voice_name} · v${voice.version}`,
-    subtitle: voice.label ?? "",
-    textPreview: text.slice(0, 80),
-    audioUrl: url,
-    createdAt: new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }),
-  });
-  if (history.value.length > 12) history.value.pop();
+function pushHistory(_voice: VoiceVersionSummary, _text: string, _url: string) {
+  void reloadHistory();
 }
 
 async function reload() {
@@ -128,7 +153,10 @@ async function reload() {
   }
 }
 
-onMounted(reload);
+onMounted(async () => {
+  await reload();
+  await reloadHistory();
+});
 
 watch(synthVersionId, (id) => {
   if (!id || multiMode.value) return;
@@ -331,7 +359,7 @@ function loadFromHistory(item: HistoryItem) {
         <div class="section-head">
           <div>
             <h2 class="section-head__title">最近生成</h2>
-            <p class="section-head__hint">点击条目可回填台本并返听</p>
+            <p class="section-head__hint">点击条目可回填台本并返听 · <router-link to="/history">查看全部</router-link></p>
           </div>
           <span class="section-head__meta">{{ history.length }} 条记录</span>
         </div>

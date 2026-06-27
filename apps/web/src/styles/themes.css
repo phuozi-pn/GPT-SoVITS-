@@ -1,0 +1,95 @@
+/* 主题切换：在 tokens.css 深色默认值之上覆盖 */
+
+[data-theme="light"],
+[data-theme="warm"] {
+  --bg-primary: #FAFAF8;
+  --bg-secondary: #F3F2EF;
+  --bg-tertiary: #FFFFFF;
+  --bg-surface: #FFFFFF;
+  --bg-surface-raised: #FFFFFF;
+  --bg-surface-glass: rgb(255 255 255 / 0.94);
+  --bg-surface-muted: rgb(247 246 243 / 0.96);
+
+  --color-ink: #1C1B19;
+  --color-ink-muted: #5C5A55;
+  --color-ink-faint: #8A8782;
+  --color-pine-ink: rgb(28 27 25 / 0.88);
+
+  --border-glow: rgb(20 19 18 / 0.09);
+  --border-subtle: rgb(20 19 18 / 0.06);
+  --border-strong: rgb(20 19 18 / 0.12);
+
+  --color-brushed: #E8E6E1;
+  --color-brushed-dark: #6B6762;
+
+  --color-xuan: #FBFAF7;
+  --color-xuan-light: #FFFFFF;
+  --color-xuan-warm: #F7F5F0;
+  --color-paper: #FBFAF7;
+  --color-paper-dark: #F0EEEA;
+  --color-surface: #FFFFFF;
+  --color-surface-raised: #FFFFFF;
+
+  --color-line: rgb(20 19 18 / 0.08);
+  --color-line-strong: rgb(20 19 18 / 0.14);
+
+  --theme-warm-soft: rgb(229 169 60 / 0.18);
+  --theme-warm-dim: rgb(229 169 60 / 0.1);
+  --color-vu-amber-soft: rgb(229 169 60 / 0.14);
+  --color-vu-amber-dim: rgb(229 169 60 / 0.16);
+  --color-indigo-soft: rgb(90 96 114 / 0.08);
+  --color-cinnabar-soft: rgb(200 90 74 / 0.08);
+  --color-success-soft: rgb(90 138 106 / 0.1);
+
+  --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.06), 0 8px 24px rgb(0 0 0 / 0.08);
+  --shadow-lift: 0 20px 48px rgb(0 0 0 / 0.12);
+  --shadow-inset: inset 0 1px 0 rgb(255 255 255 / 0.85);
+  --shadow-card: 0 1px 3px rgb(0 0 0 / 0.06), 0 4px 12px rgb(0 0 0 / 0.05);
+  --shadow-dialog: 0 0 0 1px rgb(20 19 18 / 0.06), 0 24px 48px rgb(0 0 0 / 0.12);
+
+  --deco-ink-wash: rgb(20 19 18 / 0.02);
+  --deco-indigo-mist: rgb(90 96 114 / 0.04);
+}
+
+[data-theme="warm"] {
+  --bg-primary: #F7F3EC;
+  --bg-secondary: #EFE9DF;
+  --bg-tertiary: #FFFCF7;
+  --bg-surface: #FFFCF7;
+  --bg-surface-raised: #FFFFFF;
+  --bg-surface-glass: rgb(255 252 247 / 0.94);
+  --bg-surface-muted: rgb(244 239 230 / 0.96);
+
+  --color-xuan: #F9F5EE;
+  --color-xuan-light: #FFFCF7;
+  --color-xuan-warm: #F3EDE3;
+  --color-paper: #F9F5EE;
+  --color-paper-dark: #EDE6DA;
+}
+
+/* 自定义主题：文字/边框/表面色由 theme.ts 按背景亮度动态写入 inline style */
+
+/* 浅色主题下减弱装饰层，避免发灰 */
+[data-theme="light"] .deco-ambient::before,
+[data-theme="warm"] .deco-ambient::before,
+[data-theme="custom"][data-bg-tone="light"] .deco-ambient::before {
+  opacity: 0.22;
+}
+
+[data-theme="light"] .deco-ambient::after,
+[data-theme="warm"] .deco-ambient::after,
+[data-theme="custom"][data-bg-tone="light"] .deco-ambient::after {
+  opacity: 0.15;
+}
+
+[data-theme="light"] body::after,
+[data-theme="warm"] body::after,
+[data-theme="custom"][data-bg-tone="light"] body::after {
+  opacity: 0.012;
+}
+
+[data-theme="light"] .page-surface,
+[data-theme="warm"] .page-surface {
+  --surface-line: rgb(20 19 18 / 0.08);
+  --surface-muted: rgb(247 246 243 / 0.96);
+}

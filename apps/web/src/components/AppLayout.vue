@@ -1,17 +1,19 @@
 <script setup lang="ts">
 import { computed, ref, watchEffect } from "vue";
-import { RouterLink } from "vue-router";
+import { RouterLink, useRouter } from "vue-router";
 import AppTopBar from "@/components/AppTopBar.vue";
 import OnboardingWelcome from "@/components/OnboardingWelcome.vue";
 import RequestBar from "@/components/RequestBar.vue";
 import StudioJobBanner from "@/components/StudioJobBanner.vue";
 import ToastContainer from "@/components/ToastContainer.vue";
-import { useWorkspaceShell } from "@/composables/useWorkspaceShell";
+import ThemeSwitcher from "@/components/ThemeSwitcher.vue";
 import { useOnboarding } from "@/composables/useOnboarding";
+import { useWorkspaceShell } from "@/composables/useWorkspaceShell";
 import { API_DOCS_URL } from "@/config";
 import { DEFAULT_ROUTE, PUBLIC_SITE_ROUTE } from "@/config/navigation";
+import { clearAppSession, hasAppSession } from "@/utils/session";
 
-/** 侧栏折叠状态，默认展开；可通过 localStorage 记忆 */
+const router = useRouter();
 const sidebarCollapsed = ref(
   typeof localStorage !== "undefined" ? localStorage.getItem("phonia-sidebar-collapsed") === "true" : false,
 );
@@ -45,6 +47,13 @@ const {
 
 const { showWelcome, recordFirstLogin, closeWelcome, finishOnboarding, restartOnboarding } = useOnboarding();
 
+const hasSession = computed(() => hasAppSession());
+
+function onLogout() {
+  clearAppSession();
+  void router.push("/login");
+}
+
 // 在组件挂载后检查是否需要记录首次登录
 if (!isLogin.value && typeof window !== "undefined") {
   recordFirstLogin();
@@ -59,6 +68,7 @@ const NAV_ICONS: Record<string, string> = {
   catalog: "🛒",
   discover: "🔍",
   community: "💬",
+  "my-creator": "👤",
   admin: "⚙",
 };
 
@@ -166,6 +176,8 @@ const helpLinks = computed(() => [
 
         <hr class="app-shell__foot-divider" />
 
+        <ThemeSwitcher class="app-shell__theme" />
+
         <div class="app-shell__help">
           <RouterLink
             v-for="link in helpLinks"
@@ -173,6 +185,14 @@ const helpLinks = computed(() => [
             :to="link.to"
             class="app-shell__help-link"
           >{{ link.label }}</RouterLink>
+          <button
+            v-if="hasSession"
+            type="button"
+            class="app-shell__help-link app-shell__help-link--action app-shell__help-link--danger"
+            @click="onLogout"
+          >
+            退出登录
+          </button>
           <button
             type="button"
             class="app-shell__help-link app-shell__help-link--action"
@@ -261,7 +281,7 @@ const helpLinks = computed(() => [
   transition:
     width var(--duration-normal) var(--ease-out),
     transform var(--duration-normal) var(--ease-out);
-  background-color: #171C22;
+  background-color: var(--bg-secondary);
   background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='60' height='60' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
   overflow-x: hidden;
 }
@@ -280,6 +300,7 @@ const helpLinks = computed(() => [
 .app-shell--sidebar-collapsed .app-shell__user-meta,
 .app-shell--sidebar-collapsed .app-shell__dev-current,
 .app-shell--sidebar-collapsed .app-shell__help,
+.app-shell--sidebar-collapsed .app-shell__theme,
 .app-shell--sidebar-collapsed .app-shell__doc,
 .app-shell--sidebar-collapsed .app-shell__foot-divider {
   opacity: 0;
@@ -700,6 +721,14 @@ const helpLinks = computed(() => [
   border: none;
   cursor: pointer;
   font-family: inherit;
+}
+
+.app-shell__help-link--danger {
+  color: var(--color-peak-red, #c45a4a);
+}
+
+.app-shell__help-link--danger:hover {
+  color: var(--color-peak-red, #c45a4a);
 }
 
 .app-shell__doc {

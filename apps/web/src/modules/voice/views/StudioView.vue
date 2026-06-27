@@ -6,6 +6,7 @@ import {
   confirmAsset,
   createConsent,
   createVoice,
+  exportDownloadUrl,
   fetchQuota,
   fetchPlatformCapabilities,
   pollJob,
@@ -16,6 +17,7 @@ import {
   getJob,
   type QuotaSummary,
 } from "@/api/client";
+import { fetchVoiceVersions } from "@/api/library";
 import MakeWorkspace from "@/modules/produce/components/MakeWorkspace.vue";
 import CloudGpuConnectForm from "@/modules/voice/components/studio/CloudGpuConnectForm.vue";
 import { previewCloudDataset, type DatasetPreviewResult } from "@/api/cloudTrain";
@@ -25,11 +27,11 @@ import PageHero from "@/components/PageHero.vue";
 import PageSurface from "@/components/PageSurface.vue";
 import StepTabs from "@/components/StepTabs.vue";
 import RackPanel from "@/modules/voice/components/studio/RackPanel.vue";
+import QuotaUsageMeters from "@/components/QuotaUsageMeters.vue";
 import TapeReel from "@/modules/voice/components/studio/TapeReel.vue";
 import { useWorkspaceShell } from "@/composables/useWorkspaceShell";
 import { PAGE_META } from "@/config/navigation";
-import { resolveMediaUrl } from "@/config";
-import { formatApiError } from "@/utils/apiErrors";
+import { clearAppSession } from "@/utils/session";
 import {
   formatAssetDurationZh,
   formatDurationSec,
@@ -41,6 +43,7 @@ import {
 import { buildSynthesisPayload, estimateSynthPollTimeoutMs, newSegment, validateSynthesisScript } from "@/modules/produce/types/script";
 import {
   appendStudioLog,
+  clearStudioWorkspace,
   discardStaleTrainJob,
   followStudioJob,
   isPolling as studioJobPolling,
@@ -57,10 +60,16 @@ const router = useRouter();
 const { devMode } = useWorkspaceShell();
 const studioMeta = PAGE_META.studio;
 const quota = ref<QuotaSummary | null>(null);
+const trainQuotaBlocked = computed(
+  () => quota.value != null && quota.value.trainings_remaining < 1,
+);
 
 const DRY_VOCAL_REF_TEXT =
   "好好爱自己，就有人会爱你，这乐观的说词，幸福的样子，我感觉好真实。";
 const DRY_VOCAL_SAMPLE_WAV = "/samples/keyword_vocal_9s.wav";
+const DEFAULT_SYNTH_PREVIEW_TEXT = "你好，这是一次语音合成测试。";
+const QUICK_CLONE_SPEED = 1.0;
+const QUICK_CLONE_TEMPERATURE = 0.68;
 
 const voiceName = ref("我的音色");
 const voiceId = ref("");
@@ -68,10 +77,10 @@ const assetId = ref("");
 const voiceVersionId = ref("");
 const refText = ref("");
 const refTextAuto = ref(false);
-const segments = ref([newSegment("", "你好，这是一次语音合成测试。")]);
+const segments = ref([newSegment("", DEFAULT_SYNTH_PREVIEW_TEXT)]);
 const multiMode = ref(false);
-const speed = ref(1.05);
-const temperature = ref(0.78);
+const speed = ref(QUICK_CLONE_SPEED);
+const temperature = ref(QUICK_CLONE_TEMPERATURE);
 const aiAck = ref(true);
 const audioFile = ref<File | null>(null);
 const audioUrl = ref("");
@@ -116,8 +125,9 @@ const trainProgressLine = ref("");
 const trainProgressPhase = ref("");
 const trainRemotePath = ref("");
 const trainRemoteSegments = ref<number | null>(null);
-const synthPlaybackUrl = computed(() => resolveMediaUrl(audioUrl.value));
-const synthExportHref = computed(() => synthPlaybackUrl.value || "");
+const synthExportHref = computed(() =>
+  lastSynthJobId.value ? exportDownloadUrl(lastSynthJobId.value) : "",
+);
 const busyOverlayLabel = computed(() =>
   busy.value ? busyLabel.value : studioJobPolling.value ? "训练任务进行中…" : "",
 );
@@ -216,6 +226,7 @@ function snapshotWorkspace(): StudioWorkspaceSnapshot {
     logLines: [...logLines.value],
     audioUrl: audioUrl.value,
     lastSynthJobId: lastSynthJobId.value,
+    segmentText: segments.value[0]?.text ?? "",
   };
 }
 
@@ -232,6 +243,10 @@ function applyWorkspace(ws: StudioWorkspaceSnapshot) {
   logLines.value = [...ws.logLines];
   audioUrl.value = ws.audioUrl ?? "";
   lastSynthJobId.value = ws.lastSynthJobId ?? "";
+  const restoredText = ws.segmentText?.trim();
+  if (restoredText && segments.value[0]) {
+    segments.value = [{ ...segments.value[0], text: restoredText }];
+  }
   if (voiceVersionId.value) {
     segments.value = segments.value.map((s) => ({ ...s, voiceVersionId: voiceVersionId.value }));
   }
@@ -248,6 +263,21 @@ function formatRemoteDatasetLog(job: JobResponse): string | null {
   const segs =
     job.train_dataset_segments != null ? `${job.train_dataset_segments}段 · ` : "";
   return `远端数据 · ${segs}${path}`;
+}
+
+function applyQuickCloneStableTune() {
+  speed.value = QUICK_CLONE_SPEED;
+  temperature.value = QUICK_CLONE_TEMPERATURE;
+}
+
+function syncQuickCloneSynthPreview() {
+  if (step3Mode.value !== "quick") return;
+  const ref = refText.value.trim();
+  if (!ref || !segments.value[0]) return;
+  const current = segments.value[0].text.trim();
+  if (!current || current === DEFAULT_SYNTH_PREVIEW_TEXT) {
+    segments.value = [{ ...segments.value[0], text: ref }];
+  }
 }
 
 async function applyTrainJobResult(job: JobResponse, isCloud: boolean) {
@@ -286,6 +316,10 @@ async function applyTrainJobResult(job: JobResponse, isCloud: boolean) {
     persistWorkspace();
     if (isCloud) {
       pushLog("训练完成，正在自动生成试听（首次加载权重可能需 2–4 分钟）…");
+      await runStep4();
+    } else if (step3Mode.value === "quick") {
+      syncQuickCloneSynthPreview();
+      pushLog("快速克隆完成，正在自动生成试听…");
       await runStep4();
     }
     return;
@@ -383,6 +417,9 @@ async function tryResumeTrainJob() {
       quota.value = await fetchQuota().catch(() => quota.value);
     } else if (job.status === "failed") {
       pushLog(`训练失败 · ${sanitizeWorkerError(job.error_message)}`);
+      if (step3Mode.value === "quick") {
+        void recoverVoiceVersionAfterTrainFailure();
+      }
     }
   } catch (e) {
     if (blocking) error.value = formatApiError(e);
@@ -440,6 +477,11 @@ watch(
 watch(step3Mode, (mode) => {
   sessionStorage.setItem(STEP3_MODE_KEY, mode);
   if (mode !== "cloud") datasetPreview.value = null;
+  if (mode === "quick") applyQuickCloneStableTune();
+});
+
+watch(step, (s) => {
+  if (s === 4 && step3Mode.value === "quick") syncQuickCloneSynthPreview();
 });
 
 watch(voiceVersionId, (id) => {
@@ -461,17 +503,22 @@ async function loadDryVocalSample() {
   busy.value = true;
   busyLabel.value = "加载样本…";
   try {
+    clearStudioWorkspace();
+    voiceId.value = "";
+    resetTrainingArtifacts();
+    lastSynthJobId.value = "";
+    refTextAuto.value = false;
+    step.value = 1;
+    voiceName.value = "关键词-干声9秒";
     refText.value = DRY_VOCAL_REF_TEXT;
-    if (!voiceName.value || voiceName.value === "我的音色") {
-      voiceName.value = "关键词-干声9秒";
-    }
+    logLines.value = [];
     const resp = await fetch(DRY_VOCAL_SAMPLE_WAV);
     if (!resp.ok) {
       throw new Error("样本未找到，请运行 scripts/prep_studio_dry_vocal_clip.py --copy-public");
     }
     const blob = await resp.blob();
     audioFile.value = new File([blob], "keyword_vocal_9s.wav", { type: "audio/wav" });
-    pushLog("已加载 9 秒干声参考（与参考文本对齐）");
+    pushLog("摸底：已重置 Studio 会话并加载 9 秒干声（请从步骤 ① 创建音色）");
   } catch (e) {
     error.value = formatApiError(e);
   } finally {
@@ -535,6 +582,9 @@ async function runStep2() {
     const up = await uploadAsset(voiceId.value, audioFile.value, refText.value.trim());
     assetId.value = up.asset_id;
     pushLog(`素材 #${shortId(up.asset_id)} · 上传${up.qc_passed ? " · QC 通过" : " · QC 未过"}`);
+    if (up.qc_result?.audio_enhanced) {
+      pushLog("素材已自动增强：高通/压缩/响度归一，利于云端训练吐字");
+    }
     if (!up.qc_passed) {
       const issues = up.qc_result?.issues?.map((i) => i.message).join("; ") ?? "质检未通过";
       throw new Error(issues);
@@ -605,6 +655,25 @@ async function runDatasetPreview() {
   }
 }
 
+async function recoverVoiceVersionAfterTrainFailure(): Promise<boolean> {
+  if (!voiceId.value) return false;
+  try {
+    const versions = await fetchVoiceVersions();
+    const latest = versions
+      .filter((v) => v.voice_id === voiceId.value && v.synth_ready !== false)
+      .sort((a, b) => (b.version ?? 0) - (a.version ?? 0))[0];
+    if (!latest?.voice_version_id) return false;
+    voiceVersionId.value = latest.voice_version_id;
+    segments.value = segments.value.map((s) => ({ ...s, voiceVersionId: latest.voice_version_id }));
+    step.value = 4;
+    persistWorkspace();
+    pushLog(`已恢复最新音色版本 · #${shortId(latest.voice_version_id)} · v${latest.version}`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function runStep3() {
   if (step3Mode.value === "import") {
     await runStep3Import();
@@ -631,6 +700,10 @@ async function runStep3() {
   if (kycVerified.value === false) {
     error.value = "请先完成实名认证后再训练";
     router.push("/kyc");
+    return;
+  }
+  if (quota.value && quota.value.trainings_remaining < 1) {
+    error.value = `本月训练次数已用完（${quota.value.trainings_used}/${quota.value.monthly_train_limit}），下月 1 日重置或联系运营提升额度`;
     return;
   }
   busy.value = true;
@@ -694,7 +767,11 @@ async function runStep3() {
     quota.value = await fetchQuota().catch(() => quota.value);
   } catch (e) {
     const msg = formatApiError(e);
-    error.value = msg;
+    if (!isCloud && (await recoverVoiceVersionAfterTrainFailure())) {
+      error.value = `${msg} 音色版本已在后台生成，已为你进入步骤 ④，请点「开始合成」试听。`;
+    } else {
+      error.value = msg;
+    }
     if (isCloud && !logLines.value.some((l) => l.includes("训练失败"))) {
       pushLog(`训练失败 · ${sanitizeWorkerError(msg)}`);
     }
@@ -725,6 +802,10 @@ async function runStep3Import() {
     error.value = "请返回步骤 ② 上传参考干声";
     return;
   }
+  if (quota.value && quota.value.trainings_remaining < 1) {
+    error.value = `本月训练次数已用完（${quota.value.trainings_used}/${quota.value.monthly_train_limit}），下月 1 日重置或联系运营提升额度`;
+    return;
+  }
   error.value = "";
   busy.value = true;
   busyLabel.value = "导入权重中…";
@@ -743,6 +824,7 @@ async function runStep3Import() {
     voiceVersionId.value = v.voice_version_id;
     pushLog(`权重已导入 · v${v.version} · #${shortId(v.voice_version_id)}`);
     step.value = 4;
+    quota.value = await fetchQuota().catch(() => quota.value);
   } catch (e) {
     error.value = formatApiError(e);
   } finally {
@@ -752,8 +834,12 @@ async function runStep3Import() {
 
 async function runStep4() {
   if (!voiceVersionId.value) {
-    error.value = "请先完成训练——步骤 ③ 成功后再合成试听";
-    return;
+    if (voiceId.value && (await recoverVoiceVersionAfterTrainFailure())) {
+      /* recovered latest version for this voice */
+    } else {
+      error.value = "请先完成训练——步骤 ③ 成功后再合成试听";
+      return;
+    }
   }
   segments.value = segments.value.map((s) => ({
     ...s,
@@ -819,8 +905,7 @@ async function runStep4() {
 }
 
 function logout() {
-  localStorage.removeItem("access_token");
-  localStorage.removeItem("dev_mode");
+  clearAppSession();
   router.push("/login");
 }
 
@@ -851,11 +936,6 @@ const logText = computed(() => logLines.value.join("\n") || "还没有操作记�
       <PageHero compact flow title="训练工作台" :hint="studioMeta.desc">
       <template #stats>
         <p class="page-metrics">
-          <template v-if="quota">
-            合成字符 <strong>{{ quota.chars_used.toLocaleString() }}/{{ quota.monthly_char_limit.toLocaleString() }}</strong>
-            · 训练 <strong>{{ quota.trainings_used }}/{{ quota.monthly_train_limit }}</strong>
-            ·
-          </template>
           步骤 <strong class="page-metrics__accent">{{ step }}/4</strong>
           <span v-if="assetDurationLabel && step >= 3" class="page-metrics__muted"> · 素材 {{ assetDurationLabel }}</span>
           <span v-if="trainModeLabel" class="page-metrics__muted"> · {{ trainModeLabel }}</span>
@@ -869,9 +949,15 @@ const logText = computed(() => logLines.value.join("\n") || "还没有操作记�
       </template>
       </PageHero>
 
+      <QuotaUsageMeters v-if="quota" :quota="quota" layout="panel" class="studio-quota-panel" />
+
       <div v-if="kycVerified === false" class="alert alert--warn studio-kyc">
         训练自有声纹前需完成<strong>实名认证</strong>。
         <router-link to="/kyc" class="text-action">去认证</router-link>
+      </div>
+      <div v-else-if="trainQuotaBlocked" class="alert alert--warn studio-kyc">
+        本月<strong>训练次数</strong>已用完（{{ quota?.trainings_used }}/{{ quota?.monthly_train_limit }}）。
+        下月 1 日自动重置，或联系运营提升额度。仍可「导入外部权重」跳过训练。
       </div>
       <p v-else-if="kycVerified === null" class="hint studio-kyc-hint">正在检查实名状态…</p>
 
@@ -943,12 +1029,13 @@ const logText = computed(() => logLines.value.join("\n") || "还没有操作记�
             <li>步骤 ④ 合成试听仅取 3–10 秒参考片段，<strong>不影响</strong>训练用素材长度</li>
             <li>快速克隆只需 <strong>3–9 秒</strong>清晰片段 + 对齐参考文本</li>
             <li>支持 wav / m4a / mp3 / flac，m4a 上传后自动转 wav</li>
+            <li>上传后平台会<strong>自动增强</strong>：去低频噪声、轻压缩、响度归一，让吐字更清晰洪亮（需本机 ffmpeg）</li>
           </ul>
           <div class="field">
-            <label for="refText">参考文本 <span class="hint">（可选，留空自动识别）</span></label>
-            <textarea id="refText" v-model="refText" placeholder="留空则识别音频前 9 秒；也可手动填写后上传" />
-            <p v-if="refTextAuto" class="field-hint">已由 ASR 自动识别，可编辑后重新上传</p>
-            <p v-else-if="asrAvailable" class="field-hint">上传后将自动识别参考文本（与快速克隆参考片段对齐）</p>
+            <label for="refText">参考文本 <span class="hint">（须与参考音频里说的话一致）</span></label>
+            <textarea id="refText" v-model="refText" placeholder="填写音频前 3–9 秒实际台词；留空则 ASR 自动识别" />
+            <p v-if="refTextAuto" class="field-hint">已由 ASR 识别前 9 秒，请核对后快速克隆（勿填整段长稿）</p>
+            <p v-else-if="asrAvailable" class="field-hint">留空则识别前 9 秒；手动填写时只需写这段音频里的台词，不是步骤 ④ 试听句</p>
             <p v-else class="field-hint">ASR 未就绪时需手动填写；重启平台后会自动安装（platform_start）</p>
           </div>
 
@@ -1044,11 +1131,11 @@ const logText = computed(() => logLines.value.join("\n") || "还没有操作记�
               训练可走快速克隆，但步骤 ④ 合成为 Mock 蜂鸣。请设 <code>ENGINE_MOCK=false</code> 并启动引擎 9880。
             </div>
             <div v-else class="alert alert--info" style="margin-bottom: 0.65rem">
-              使用你的干声作参考，经 api_v2 zero-shot 合成。不依赖云端 GPU，也不需预训练权重。
+              使用干声前 3–9 秒作参考（zero-shot）。默认<strong>稳态参数</strong>（温度 0.68 / 语速 1.0）减轻电音；素材须干净无 BGM。
             </div>
             <div class="row">
               <button type="button" class="text-action" :disabled="busy" @click="goBack">上一步</button>
-              <button type="button" class="btn btn--primary" :disabled="busy || !quickCloneAvailable" @click="runStep3">
+              <button type="button" class="btn btn--primary" :disabled="busy || trainQuotaBlocked || !quickCloneAvailable" @click="runStep3">
                 开始快速克隆
               </button>
             </div>
@@ -1160,7 +1247,7 @@ const logText = computed(() => logLines.value.join("\n") || "还没有操作记�
               <button
                 type="button"
                 class="btn btn--primary"
-                :disabled="studioLocked || !cloudGpuConnected"
+                :disabled="studioLocked || !cloudGpuConnected || trainQuotaBlocked"
                 @click="runStep3"
               >
                 开始云端训练
@@ -1189,7 +1276,7 @@ const logText = computed(() => logLines.value.join("\n") || "还没有操作记�
             </div>
             <div class="row" style="margin-top: 0.75rem">
               <button type="button" class="text-action" :disabled="busy" @click="goBack">上一步</button>
-              <button type="button" class="btn btn--primary" :disabled="busy" @click="runStep3">导入并试听</button>
+              <button type="button" class="btn btn--primary" :disabled="busy || trainQuotaBlocked" @click="runStep3">导入并试听</button>
             </div>
           </template>
         </RackPanel>
@@ -1199,8 +1286,11 @@ const logText = computed(() => logLines.value.join("\n") || "还没有操作记�
             <span>当前音色版本 <code>#{{ shortId(voiceVersionId) }}</code></span>
             <span v-if="step3ModeLabel" class="studio-version-banner__mode">{{ step3ModeLabel }}</span>
           </div>
+          <div v-if="step3Mode === 'quick'" class="alert alert--info studio-synth-hint">
+            <strong>参考文本</strong>（步骤 ②）须与参考音频逐字对齐；下方<strong>试听台本</strong>可以是任意新句子。快速克隆会自动用参考文本填充试听（可改）。
+          </div>
           <div class="alert alert--info studio-synth-hint">
-            合成音频开头含 <strong>短-长-短-短</strong> 合规节奏标识（约 0.75 秒），之后才是正文。若几乎听不到人声，请检查训练权重或重新云端训练。
+            合成音频开头含 <strong>短-长-短-短</strong> 合规节奏标识（约 0.75 秒），之后才是正文。若几乎听不到人声，请检查参考文本是否与音频对齐。
           </div>
           <MakeWorkspace
             v-model:segments="segments"
@@ -1273,6 +1363,10 @@ const logText = computed(() => logLines.value.join("\n") || "还没有操作记�
 </template>
 
 <style scoped>
+.studio-quota-panel {
+  margin-bottom: 14px;
+}
+
 .studio-make-wrap {
   min-height: 0;
 }

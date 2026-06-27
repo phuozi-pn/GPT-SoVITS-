@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import FileResponse, Response
 from sqlalchemy.orm import Session
 from voice_platform.social.schemas import (
+    AvatarGenerateResponse,
     ConversationPreviewResponse,
     MessageCreateRequest,
     MessageResponse,
@@ -43,6 +44,17 @@ def update_my_profile(
     session: Session = Depends(get_session),
 ) -> UserPublicProfileResponse:
     return SocialService(session).update_my_profile(user_id=user_id, body=body)
+
+
+@router.post("/users/me/profile/generate-avatar", response_model=AvatarGenerateResponse)
+def generate_my_avatar(
+    user_id: UUID = Depends(get_current_user_id),
+    session: Session = Depends(get_session),
+) -> AvatarGenerateResponse:
+    try:
+        return SocialService(session).generate_my_avatar(user_id=user_id)
+    except SocialServiceError as exc:
+        raise_domain_http(exc)
 
 
 @router.get("/users/{target_user_id}", response_model=UserPublicProfileResponse)

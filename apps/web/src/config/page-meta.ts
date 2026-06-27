@@ -45,6 +45,18 @@ export const PAGE_META: Record<string, PageMeta> = {
     desc: "短剧/系列剧 CSV 驱动：多角色大批量合成与合规 ZIP 导出",
     workflow: "① 建项目 → ② 绑角色音色 → ③ 上传 CSV → ④ 下载 ZIP",
   },
+  account: {
+    group: "制作",
+    label: "账户与 Token",
+    desc: "查看钱包余额、购买 TTS Token 包（Mock 即时到账）、浏览充值与扣减流水",
+    workflow: "查看余额 → 选购套餐 → Mock 支付 → 合成时自动抵扣",
+  },
+  history: {
+    group: "制作",
+    label: "合成历史",
+    desc: "浏览历史合成任务，查看台本内容与试听音频",
+    workflow: "列表浏览 → 打开详情 → 试听 / 复制台本",
+  },
   studio: {
     group: "音色",
     label: "训练工作台",
@@ -90,6 +102,16 @@ export const PAGE_META: Record<string, PageMeta> = {
     group: "社区",
     label: "创作者主页",
     desc: "查看创作者公开作品与上架音色",
+  },
+  creators: {
+    group: "社区",
+    label: "创作者",
+    desc: "浏览认证创作者与其精选代表作",
+  },
+  "my-creator": {
+    group: "社区",
+    label: "我的主页",
+    desc: "编辑展示资料与管理公开作品",
   },
   quality: {
     group: "音色",

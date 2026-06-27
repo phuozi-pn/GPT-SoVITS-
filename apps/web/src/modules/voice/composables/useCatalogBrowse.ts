@@ -1,4 +1,4 @@
-import { computed, ref, watch, type Ref } from "vue";
+import { computed, nextTick, ref, watch, type Ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { fetchCatalog, fetchCatalogTags, type CatalogEntry } from "@/api/catalog";
 import { formatApiError } from "@/utils/apiErrors";
@@ -116,6 +116,21 @@ export function useCatalogBrowse() {
     router.replace({ query: { ...route.query, pick: catalogId } });
   }
 
+  /** 封面/发布保存后：选中条目并滚动到左侧上架展示卡片 */
+  async function focusPublishedEntry(catalogId: string) {
+    const entry = entries.value.find((e) => e.catalog_id === catalogId);
+    if (entry && !entry.featured) {
+      viewMode.value = "all";
+    }
+    selectVoice(catalogId);
+    await nextTick();
+    requestAnimationFrame(() => {
+      document
+        .querySelector(`[data-catalog-id="${catalogId}"]`)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  }
+
   function contactCreator(ownerUserId: string, voiceTitle?: string) {
     const draft = voiceTitle ? `你好，我对「${voiceTitle}」感兴趣，想咨询授权。` : "";
     router.push({
@@ -169,6 +184,7 @@ export function useCatalogBrowse() {
     clearTagFilter,
     applyTagQuery,
     selectVoice,
+    focusPublishedEntry,
     contactCreator,
     goLibrary,
     initFromRoute,

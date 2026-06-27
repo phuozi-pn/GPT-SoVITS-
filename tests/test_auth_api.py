@@ -55,7 +55,7 @@ def test_login_success(client):
         trainings_remaining=1,
         reset_at=datetime.now(timezone.utc),
     )
-    user = MagicMock(id=user_id, phone="13800000099", status="active")
+    user = MagicMock(id=user_id, phone="13800000099", email=None, status="active", verified=False)
     with (
         patch("domains.auth.service.OtpStore") as otp_cls,
         patch("domains.auth.service.UserRepository") as user_repo_cls,
@@ -134,4 +134,98 @@ def test_synthesis_with_bearer_token(client_strict_auth):
 
 def test_invalid_phone_rejected(client):
     r = client.post("/api/v1/auth/sms/send", json={"phone": "12345"})
+    assert r.status_code == 422
+
+
+def test_send_email_mock(client):
+    with patch("domains.auth.service.OtpStore") as otp_cls:
+        store = otp_cls.return_value
+        store.is_locked.return_value = False
+        store.issue.return_value = "654321"
+        with patch("domains.auth.service.get_settings") as settings_cls:
+            settings = settings_cls.return_value
+            settings.resend_configured = False
+            settings.sms_mock = True
+            settings.sms_otp_ttl_sec = 300
+            r = client.post("/api/v1/auth/email/send", json={"email": "user@example.com"})
+    assert r.status_code == 200
+    assert r.json()["mock_code"] == "654321"
+
+
+def test_send_email_resend(client):
+    with (
+        patch("domains.auth.service.OtpStore") as otp_cls,
+        patch("domains.auth.service.ResendClient") as resend_cls,
+        patch("domains.auth.service.get_settings") as settings_cls,
+    ):
+        store = otp_cls.return_value
+        store.is_locked.return_value = False
+        store.issue.return_value = "654321"
+        settings = settings_cls.return_value
+        settings.resend_configured = True
+        settings.sms_otp_ttl_sec = 300
+        settings.sms_mock = True
+        resend_cls.return_value.enabled = True
+        r = client.post("/api/v1/auth/email/send", json={"email": "user@example.com"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body.get("mock_code") is None
+    assert "邮箱" in body["message"]
+    resend_cls.return_value.send_login_code.assert_called_once()
+
+
+def test_send_email_resend_failure(client):
+    from voice_platform.email.resend import ResendError
+
+    with (
+        patch("domains.auth.service.OtpStore") as otp_cls,
+        patch("domains.auth.service.ResendClient") as resend_cls,
+        patch("domains.auth.service.get_settings") as settings_cls,
+    ):
+        store = otp_cls.return_value
+        store.is_locked.return_value = False
+        store.issue.return_value = "654321"
+        settings = settings_cls.return_value
+        settings.resend_configured = True
+        settings.sms_otp_ttl_sec = 300
+        resend_cls.return_value.send_login_code.side_effect = ResendError("quota", code="RESEND_API_ERROR")
+        r = client.post("/api/v1/auth/email/send", json={"email": "user@example.com"})
+    assert r.status_code == 502
+    assert r.json()["code"] == "RESEND_API_ERROR"
+
+
+def test_login_with_email_success(client):
+    user_id = uuid4()
+    quota = QuotaSummary(
+        monthly_char_limit=20000,
+        chars_used=0,
+        chars_remaining=20000,
+        monthly_train_limit=1,
+        trainings_used=0,
+        trainings_remaining=1,
+        reset_at=datetime.now(timezone.utc),
+    )
+    user = MagicMock(id=user_id, phone=None, email="user@example.com", status="active", verified=False)
+    with (
+        patch("domains.auth.service.OtpStore") as otp_cls,
+        patch("domains.auth.service.UserRepository") as user_repo_cls,
+        patch("domains.auth.service.QuotaRepository") as quota_repo_cls,
+    ):
+        store = otp_cls.return_value
+        store.is_locked.return_value = False
+        store.verify.return_value = True
+        user_repo_cls.return_value.get_or_create_by_email.return_value = user
+        quota_repo_cls.return_value.get_summary.return_value = quota
+        r = client.post(
+            "/api/v1/auth/email/login",
+            json={"email": "user@example.com", "code": "654321"},
+        )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["access_token"]
+    assert body["user"]["email"] == "user@example.com"
+
+
+def test_invalid_email_rejected(client):
+    r = client.post("/api/v1/auth/email/send", json={"email": "not-an-email"})
     assert r.status_code == 422

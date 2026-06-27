@@ -1,10 +1,41 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Phonia · AI 声纹克隆与智能配音</title>
     <meta name="description" content="Phonia — 专业声纹克隆与多角色智能配音平台。公开音色试听、社区展示与授权验真；登录后使用完整制作工作台。" />
+    <script>
+      (function () {
+        try {
+          var raw = localStorage.getItem("phonia-theme");
+          if (!raw) return;
+          var state = JSON.parse(raw);
+          var html = document.documentElement;
+          if (state.mode) html.setAttribute("data-theme", state.mode);
+          if (state.mode === "custom" && state.customBg) {
+            var hex = String(state.customBg).replace(/^#/, "");
+            if (/^[0-9a-f]{3}$|^[0-9a-f]{6}$/i.test(hex)) {
+              if (hex.length === 3) hex = hex.split("").map(function (c) { return c + c; }).join("");
+              var r = parseInt(hex.slice(0, 2), 16) / 255;
+              var g = parseInt(hex.slice(2, 4), 16) / 255;
+              var b = parseInt(hex.slice(4, 6), 16) / 255;
+              var lin = function (c) { return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+              var L = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+              var light = L > 0.45;
+              html.setAttribute("data-bg-tone", light ? "light" : "dark");
+              html.style.colorScheme = light ? "light" : "dark";
+              html.style.setProperty("--bg-primary", state.customBg);
+              html.style.setProperty("--color-ink", light ? "#1C1B19" : "#F5F3EF");
+              html.style.setProperty("--color-ink-muted", light ? "#5C5A55" : "#C4C0BA");
+              html.style.setProperty("--color-ink-faint", light ? "#8A8782" : "#9E9993");
+            }
+          } else if (state.mode === "light" || state.mode === "warm") {
+            html.style.colorScheme = "light";
+          }
+        } catch (e) {}
+      })();
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link

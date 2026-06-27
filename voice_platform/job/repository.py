@@ -186,7 +186,7 @@ class JobRepository:
         owner_user_id: UUID | None = None,
         limit: int = 50,
     ) -> list[JobRecord]:
-        stmt = select(JobRow).order_by(JobRow.updated_at.desc()).limit(limit)
+        stmt = select(JobRow).order_by(JobRow.created_at.desc()).limit(limit)
         if status:
             stmt = stmt.where(JobRow.status == status)
         if job_type:
@@ -195,6 +195,25 @@ class JobRepository:
             stmt = stmt.where(JobRow.owner_user_id == owner_user_id)
         rows = self._session.scalars(stmt).all()
         return [_row_to_record(row) for row in rows]
+
+    def delete_non_displayable_synthesis_jobs(self, *, owner_user_id: UUID) -> int:
+        rows = self._session.scalars(
+            select(JobRow).where(
+                JobRow.job_type == JobType.SYNTHESIZE.value,
+                JobRow.owner_user_id == owner_user_id,
+            )
+        ).all()
+        to_delete = [
+            row
+            for row in rows
+            if row.status != JobStatus.SUCCEEDED.value
+            or not (row.result or {}).get("audio_url")
+        ]
+        for row in to_delete:
+            self._session.delete(row)
+        if to_delete:
+            self._session.commit()
+        return len(to_delete)
 
     def count_by_status(self, status: str) -> int:
         return int(
@@ -672,6 +691,15 @@ class VoiceVersionRepository:
         self._session.refresh(row)
         return row
 
+    def merge_metadata(self, voice_version_id: UUID, patch: dict) -> None:
+        row = self.get(voice_version_id)
+        if not row or not patch:
+            return
+        meta = dict(row.metadata_json or {})
+        meta.update(patch)
+        row.metadata_json = meta
+        self._session.commit()
+
     def delete_version(self, voice_version_id: UUID) -> bool:
         row = self.get(voice_version_id)
         if not row:
@@ -746,6 +774,14 @@ class ProjectRepository:
             ).all()
         )
 
+    def delete_role(self, *, project_id: UUID, role_id: UUID) -> bool:
+        row = self._session.get(ProjectRoleRow, role_id)
+        if not row or row.project_id != project_id:
+            return False
+        self._session.delete(row)
+        self._session.commit()
+        return True
+
     def version_in_use(self, voice_version_id: UUID) -> bool:
         count = self._session.scalar(
             select(func.count())
@@ -774,6 +810,7 @@ class VoiceCatalogRepository:
         billing_unit: str = "per_1k_chars",
         included_chars: int = 50000,
         prohibited_domains: list[str] | None = None,
+        cover_image_url: str | None = None,
     ) -> VoiceCatalogEntryRow:
         prohibited_domains = prohibited_domains or []
         existing = self._session.scalars(
@@ -792,6 +829,8 @@ class VoiceCatalogRepository:
             existing.billing_unit = billing_unit
             existing.included_chars = included_chars
             existing.prohibited_domains_json = prohibited_domains
+            if cover_image_url is not None:
+                existing.cover_image_url = cover_image_url or None
             existing.policy_version = (existing.policy_version or 1) + 1
             existing.status = "pending"
             self._session.commit()
@@ -812,6 +851,7 @@ class VoiceCatalogRepository:
             billing_unit=billing_unit,
             included_chars=included_chars,
             prohibited_domains_json=prohibited_domains,
+            cover_image_url=cover_image_url or None,
             policy_version=1,
         )
         self._session.add(row)
@@ -865,6 +905,40 @@ class VoiceCatalogRepository:
             return
         row.demo_audio_url = demo_audio_url
         self._session.commit()
+
+    def set_cover_image_url(self, catalog_id: UUID, *, cover_image_url: str) -> VoiceCatalogEntryRow | None:
+        row = self.get(catalog_id)
+        if not row:
+            return None
+        row.cover_image_url = cover_image_url or None
+        self._session.commit()
+        self._session.refresh(row)
+        return row
+
+    def update_owner_entry(
+        self,
+        catalog_id: UUID,
+        owner_user_id: UUID,
+        *,
+        title: str | None = None,
+        description: str | None = None,
+        tags: list[str] | None = None,
+        cover_image_url: str | None = None,
+    ) -> VoiceCatalogEntryRow | None:
+        row = self.get(catalog_id)
+        if not row or row.owner_user_id != owner_user_id:
+            return None
+        if title is not None:
+            row.title = title
+        if description is not None:
+            row.description = description
+        if tags is not None:
+            row.tags_json = tags
+        if cover_image_url is not None:
+            row.cover_image_url = cover_image_url or None
+        self._session.commit()
+        self._session.refresh(row)
+        return row
 
     def get(self, catalog_id: UUID) -> VoiceCatalogEntryRow | None:
         return self._session.get(VoiceCatalogEntryRow, catalog_id)
@@ -947,6 +1021,17 @@ class VoiceCatalogRepository:
             select(VoiceCatalogEntryRow).where(
                 VoiceCatalogEntryRow.voice_version_id == voice_version_id,
             )
+        ).first()
+
+    def find_active_by_version(self, voice_version_id: UUID) -> VoiceCatalogEntryRow | None:
+        """优先返回已上架条目，与公开音色馆/首页展示一致。"""
+        published = self.get_by_version(voice_version_id)
+        if published:
+            return published
+        return self._session.scalars(
+            select(VoiceCatalogEntryRow)
+            .where(VoiceCatalogEntryRow.voice_version_id == voice_version_id)
+            .order_by(VoiceCatalogEntryRow.created_at.desc())
         ).first()
 
     def is_publicly_listed(self, voice_version_id: UUID) -> bool:

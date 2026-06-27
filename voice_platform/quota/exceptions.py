@@ -35,6 +35,6 @@ class QuotaExceededError(Exception):
                 "monthly_limit": self.monthly_limit,
                 "used": self.used,
                 "reset_at": self.reset_at.isoformat(),
-                "upgrade_url": "/billing",
+                "upgrade_url": "/account",
             },
         }

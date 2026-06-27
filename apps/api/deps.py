@@ -39,10 +39,12 @@ def _resolve_auth(
             try:
                 return AuthService.decode_token(token)
             except AuthError as exc:
-                raise HTTPException(
-                    status_code=401,
-                    detail={"code": exc.code, "message": exc.message},
-                ) from exc
+                if required:
+                    raise HTTPException(
+                        status_code=401,
+                        detail={"code": exc.code, "message": exc.message},
+                    ) from exc
+                # 公开浏览：过期/无效 token 按未登录访客处理，避免误拦首页试听等接口
 
     if x_api_key and x_api_key.startswith("vsk_"):
         from domains.developer.service import DeveloperService, DeveloperServiceError

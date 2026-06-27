@@ -338,7 +338,7 @@ function tempLabel(v: number): string {
   background: var(--color-vu-amber-soft);
   font-size: 10px;
   font-weight: 500;
-  color: #8a5a24;
+  color: var(--theme-warm);
 }
 
 /* ── 嵌入模式标题 ─────────────────────────────────── */
@@ -412,7 +412,7 @@ function tempLabel(v: number): string {
   padding: 1px 6px;
   border-radius: 3px;
   background: var(--color-vu-amber-soft);
-  color: #8a5a24;
+  color: var(--theme-warm);
 }
 
 .vp-field__ticks {
@@ -506,7 +506,7 @@ function tempLabel(v: number): string {
   color: var(--color-ink-muted);
 }
 
-.vp-emotion-btn--on .vp-emotion-btn__text { color: #8a5a24; }
+.vp-emotion-btn--on .vp-emotion-btn__text { color: var(--theme-warm); }
 
 /* ── 智能推荐区（去AI感，低调融入） ───────────────── */
 .vp-reference {
@@ -621,7 +621,7 @@ function tempLabel(v: number): string {
 .vp-playback__export:hover {
   border-color: var(--color-vu-amber);
   background: var(--color-vu-amber-soft);
-  color: #8a5a24;
+  color: var(--theme-warm);
 }
 
 .vp-playback__player {
